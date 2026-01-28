@@ -1,7 +1,7 @@
 #include "syscall.h"
 
 int main() {
-    PrintString("Our team:\n");
+    PrintString("Hello Test\n");
     PrintString("19120037 Le Duy Thuc\n");
     PrintString("19120395 Tran Duy Tien\n");
     PrintString("19120219 Ha Chi Hao\n\n");
