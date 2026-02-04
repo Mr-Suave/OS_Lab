@@ -8,7 +8,7 @@ int main() {
     for (i = 0; i < 5; i++) {
         PrintString("Going to sleep for 500000 ticks...\n");
         
-        Sleep(500000);
+        Sleep(10000);
         
         PrintString("I am awake now!\n");
     }

@@ -101,7 +101,7 @@ class Thread {
     void Yield();                // Relinquish the CPU if any
                                  // other thread is runnable
     void Sleep(bool finishing);  // Put the thread to sleep and
-                                 // relinquish the processor
+    void Sleep2(bool finishing);                             // relinquish the processor
     void Begin();                // Startup code for the thread
     void Finish();               // The thread is done executing
 

@@ -96,7 +96,7 @@ void Alarm::WaitUntil(int x) {
 
     // 4. Put the thread to sleep (this changes status to BLOCKED and yields CPU)
     // Thread::Sleep expects interrupts to be OFF
-    kernel->currentThread->Sleep(FALSE);
+    kernel->currentThread->Sleep2(FALSE);
 
     // 5. Re-enable interrupts after waking up
     (void)kernel->interrupt->SetLevel(oldLevel);
