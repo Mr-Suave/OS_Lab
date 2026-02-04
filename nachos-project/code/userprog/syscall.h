@@ -49,6 +49,7 @@
 #define SC_Signal 53
 #define SC_GetPid 54
 #define SC_Abs 55
+#define SC_Sleep 56
 #ifndef IN_ASM
 
 /* The system call interface.  These are the operations the Nachos
@@ -83,6 +84,9 @@ int RandomNum();
 void ReadString(char *buffer, int length);
 
 void PrintString(char *buffer);
+
+// sleep syscall
+void Sleep(int ticks);
 
 /* ABS Function */
 unsigned int Abs(int op1);

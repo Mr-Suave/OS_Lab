@@ -74,6 +74,14 @@ Exit:
 	j	$31
 	.end Exit
 
+	.globl Sleep
+	.ent	Sleep
+Sleep:
+	addiu $2,$0,SC_Sleep
+	syscall
+	j	$31
+	.end Sleep
+
 	.globl Exec
 	.ent	Exec
 Exec:

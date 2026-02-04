@@ -403,6 +403,14 @@ void handle_SC_GetPid() {
     return move_program_counter();
 }
 
+void handle_SC_Sleep() {
+    int ticks = kernel->machine->ReadRegister(4); //read the argument
+    DEBUG(dbgSys, "User program calling Sleep for " << ticks << " ticks"); //debug mode
+    kernel->alarm->WaitUntil(ticks); //newly made wait until program must be executed here
+    return move_program_counter();
+
+}
+
 void ExceptionHandler(ExceptionType which) {
     int type = kernel->machine->ReadRegister(2);
 
@@ -430,6 +438,8 @@ void ExceptionHandler(ExceptionType which) {
 		    return handle_SC_Abs();
                 case SC_Halt:
                     return handle_SC_Halt();
+                case SC_Sleep:
+                    return handle_SC_Sleep();
                 case SC_Add:
                     return handle_SC_Add();
                 case SC_ReadNum:

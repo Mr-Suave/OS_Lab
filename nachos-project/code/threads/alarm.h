@@ -21,6 +21,16 @@
 #include "utility.h"
 #include "callback.h"
 #include "timer.h"
+#include "list.h"
+#include "thread.h"
+
+// Helper class to store sleeping threads and their wake-up deadlines
+class SleepingThread {
+   public:
+    SleepingThread(Thread *t, int time) : thread(t), wakeTime(time) {}
+    Thread *thread;
+    int wakeTime;
+};
 
 // The following class defines a software alarm clock.
 class Alarm : public CallBackObj {
@@ -34,9 +44,10 @@ class Alarm : public CallBackObj {
 
    private:
     Timer *timer;  // the hardware timer device
-
+    SortedList<SleepingThread *> *sleepQueue; //initialise a sorted list to keep and maintain sleeping threads
     void CallBack();  // called when the hardware
                       // timer generates an interrupt
+    static int CompareSleepingThreads(SleepingThread *a, SleepingThread *b);
 };
 
 #endif  // ALARM_H

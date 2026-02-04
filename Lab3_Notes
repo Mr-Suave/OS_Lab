@@ -1,0 +1,8 @@
+Implement a SLEEP SYS Call
+
+- Check the Alarm Function
+- Put processess to the Sleep List then go and trigger a function using Alarm Function every second, then this function shud go and
+check the sleep list and then check whether any processes has finished sleeping - time elapsed > sleep time - then release it from the list
+- modify the scheduler to ignore any program that is in the sleep list
+
+

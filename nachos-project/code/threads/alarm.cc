@@ -20,7 +20,9 @@
 //		occur at random, instead of fixed, intervals.
 //----------------------------------------------------------------------
 
-Alarm::Alarm(bool doRandom) { timer = new Timer(doRandom, this); }
+Alarm::Alarm(bool doRandom) { 
+    timer = new Timer(doRandom, this);
+    sleepQueue = new SortedList<SleepingThread *>(CompareSleepingThreads); }
 
 //----------------------------------------------------------------------
 // Alarm::CallBack
@@ -40,11 +42,62 @@ Alarm::Alarm(bool doRandom) { timer = new Timer(doRandom, this); }
 //      if we're currently running something (in other words, not idle).
 //----------------------------------------------------------------------
 
+
+
 void Alarm::CallBack() {
     Interrupt *interrupt = kernel->interrupt;
     MachineStatus status = interrupt->getStatus();
 
+    // Check if any threads in the sleepQueue need to be woken up
+    if (!sleepQueue->IsEmpty()) {
+        int currentTime = kernel->stats->totalTicks;
+        
+        // Peek at the front of the sorted list
+        while (!sleepQueue->IsEmpty() && sleepQueue->Front()->wakeTime <= currentTime) {
+            SleepingThread *st = sleepQueue->RemoveFront();
+            
+            // Put the thread back on the ready queue
+            kernel->scheduler->ReadyToRun(st->thread);
+            
+            delete st; // Clean up the helper object
+        }
+    }
+
     if (status != IdleMode) {
         interrupt->YieldOnReturn();
     }
+}
+
+//compare sleeping threads helper function
+int Alarm::CompareSleepingThreads(SleepingThread *a, SleepingThread *b) {
+    if (a->wakeTime < b->wakeTime) return -1;
+    if (a->wakeTime > b->wakeTime) return 1;
+    return 0;
+}
+
+
+//alarm wait until function to handle the thread and enter the new entry into the sorted list
+void Alarm::WaitUntil(int x) {
+
+    if (x <=0) {return;}
+    // Disable interrupts 
+    IntStatus oldLevel = kernel->interrupt->SetLevel(IntOff);
+
+    // 2. Calculate the absolute time when this thread should wake up
+    // Stats->totalTicks  = current system time
+    int wakeTime = kernel->stats->totalTicks + x;
+    
+    DEBUG(dbgThread, "Thread " << kernel->currentThread->getName() 
+          << " sleeping until " << wakeTime);
+
+    // 3. Create a record for this thread and put it in the sorted queue
+    SleepingThread *st = new SleepingThread(kernel->currentThread, wakeTime);
+    sleepQueue->Insert(st);
+
+    // 4. Put the thread to sleep (this changes status to BLOCKED and yields CPU)
+    // Thread::Sleep expects interrupts to be OFF
+    kernel->currentThread->Sleep(FALSE);
+
+    // 5. Re-enable interrupts after waking up
+    (void)kernel->interrupt->SetLevel(oldLevel);
 }
