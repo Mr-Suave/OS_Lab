@@ -6,3 +6,15 @@ check the sleep list and then check whether any processes has finished sleeping 
 - modify the scheduler to ignore any program that is in the sleep list
 
 
+What I did:
+
+- The timer always called the Callback function in the alarm.h and alarm.cc files
+- Made a custom sorted list with custom compare function to handle sleeping threads
+- Sleeping thread is a new class that is created side by side alarm class
+- The WaitUntil function (that is declared inside alarm.h ) is now implemented in alarm.cc where the  waituntil function makes an entry in the sleepingthread sorted list using the amount ( ticks ) provided
+wakeuptime for the thread is set as currenttime + ticks ... then the Thread::Sleep function is called so the Thread now goes into Sleep Mode....
+- Now everytime the callback is called by the timer, we use the Alarm:Callback function  check whether the front queue ( least wakeuptime -> because its sorted like that ) has a wakeuptime that is les that current time
+then we move it to the ReadyToRun list in the sheduler
+- Hence the BLOCKED thread is now put into ready to run
+- Also implemented Thread:Sleep2 because sir told us to ...
+
