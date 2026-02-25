@@ -1,5 +1,16 @@
 #ifndef PCB_H
 #define PCB_H
+#include "pipebuffer.h"
+
+#define MAX_FD 20
+#define FD_FREE 0
+#define FD_PIPE_READ 1
+#define FD_PIPE_WRITE 2
+
+struct FileDescriptor {
+    int type;
+    PipeBuffer* pipe;
+};
 
 class PCB {
    private:
@@ -37,6 +48,11 @@ class PCB {
 
     void SetFileName(char *fn);
     char *GetFileName();
+
+    FileDescriptor fdTable[MAX_FD];
+    void InitFdTable();
+    int AllocFd(int type, PipeBuffer* pipe);
+    
 };
 
 #endif

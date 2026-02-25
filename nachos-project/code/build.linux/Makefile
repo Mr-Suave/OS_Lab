@@ -275,6 +275,7 @@ THREAD_H = ../threads/alarm.h\
 	../threads/pcb.h\
 	../threads/stable.h\
 	../threads/sem.h\
+	../threads/pipebuffer.h\
 
 THREAD_C = ../threads/alarm.cc\
 	../threads/kernel.cc\
@@ -287,8 +288,9 @@ THREAD_C = ../threads/alarm.cc\
 	../threads/pcb.cc\
 	../threads/stable.cc\
 	../threads/sem.cc\
+	../threads/pipebuffer.cc\
 
-THREAD_O = alarm.o kernel.o main.o scheduler.o synch.o thread.o ptable.o pcb.o stable.o sem.o
+THREAD_O = alarm.o pipebuffer.o kernel.o main.o scheduler.o synch.o thread.o ptable.o pcb.o stable.o sem.o
 
 USERPROG_H = ../userprog/addrspace.h\
 	../userprog/syscall.h\
@@ -347,6 +349,9 @@ $(C_OFILES): %.o:
 
 switch.o: ../threads/switch.S
 	$(CC) $(CPP_AS_FLAGS) -P $(INCPATH) $(HOSTCFLAGS) -c ../threads/switch.S
+	
+pipebuffer.o: ../threads/pipebuffer.cc $(THREAD_H)
+	$(CC) $(CFLAGS) -c ../threads/pipebuffer.cc
 
 depend: $(CFILES) $(HFILES)
 	$(CC) $(INCPATH) $(DEFINES) $(HOSTCFLAGS) -DCHANGED -M $(CFILES) > makedep

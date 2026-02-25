@@ -1,11 +1,18 @@
 #include "synch.h"
 #include "pcb.h"
 
+
 PCB::PCB(int id) {
     this->processID = kernel->currentThread->processID;
     joinsem = new Semaphore("joinsem", 0);
     exitsem = new Semaphore("exitsem", 0);
     multex = new Semaphore("multex", 1);
+
+    //initialize fd table
+    for (int i = 0; i< MAX_FD; i++) {
+        fdTable[i].type = FD_FREE;
+        fdTable[i].pipe = NULL;
+    }
 }
 
 PCB::~PCB() {
@@ -113,6 +120,17 @@ void PCB::DecNumWait() {
     if (numwait > 0) --numwait;
     multex->V();
 }
+
+int PCB::AllocFd(int type, PipeBuffer* pipe) {
+    for (int i = 0; i < MAX_FD; i++) {
+        if (fdTable[i].type == FD_FREE) {
+            fdTable[i].type = type;
+            fdTable[i].pipe = pipe;
+            return i;
+        }
+    }
+    return -1; // no free fd
+} 
 
 void PCB::SetExitCode(int ec) { exitcode = ec; }
 
