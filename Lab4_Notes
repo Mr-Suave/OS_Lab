@@ -1,0 +1,30 @@
+Initialize pipe syscall
+it will take two variables as input : x and y 
+it will assign file descriptors to both x and y 
+
+then x will write to a buffer and y will read through a buffer (will be shared) it will be called a pipe buffer
+so we will then have to implement a Write and Read syscall then - which will both read and write to buffers differently for pipe and normally otherwise
+after we do Exec after doing pipe, Exec will inherit both pointers
+
+
+parent will write using one of the fd and child will read using the other fd yeah?
+
+
+Main BluePrint:
+
+int fd[2];
+Pipe(fd);        // fd[0] = read end, fd[1] = write end
+// fd[0] and fd[1] are just integers (file descriptors)
+
+Exec(cmd1);      // child inherits both fd[0] and fd[1]
+// cmd1 writes to fd[1]
+// cmd2 reads from fd[0]
+
+
+What you need to implement:
+
+PipeBuffer struct in kernel
+A file descriptor table per process (array of pointers, some point to files, some to pipes)
+SC_Pipe syscall — allocates PipeBuffer, returns two fd's
+Modify SC_Read and SC_Write to check if fd is a pipe fd and route accordingly
+Inherit fd table on Exec
