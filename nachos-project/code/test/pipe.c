@@ -10,8 +10,8 @@ int main() {
         PrintString("Pipe creation failed!\n");
         Halt();
     }
-
-    pid = Exec("pipe");
+    PrintString("Forkinggggg...\n");
+    pid = Exec("../test/pipe");
 
     if(pid > 0){
         // parent
