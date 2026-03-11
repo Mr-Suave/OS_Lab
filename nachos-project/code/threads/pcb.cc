@@ -66,13 +66,19 @@ int PCB::Exec(char* filename, int id) {
         return -1;    // Tra ve -1 neu that bai
     }
 
+    //pipe inheritance in Exec 
+    for(int i = 0; i< MAX_FD; i++) {
+        this->fdTable[i].type = kernel->currentThread->pcb->fdTable[i].type;
+        this->fdTable[i].pipe = kernel->currentThread->pcb->fdTable[i].pipe;
+    }
+
     //  Đặt processID của thread này là id.
     this->thread->processID = id;
     // Đặt parrentID của thread này là processID của thread gọi thực thi Exec
     this->parentID = kernel->currentThread->processID;
     // Gọi thực thi Fork(StartProcess_2,id) => Ta cast thread thành kiểu int,
     // sau đó khi xử ký hàm StartProcess ta cast Thread về đúng kiểu của nó.
-
+    this->thread->pcb = this;
     // Không được sử dụng biến id ở đây, vì biến id là biến cục bộ,
     // nên khi hàm này kết thúc thì giá trị của biến này cũng bị xóa
     // Đừng hỏi tôi đã mất bao lâu để nhận ra điều này :)

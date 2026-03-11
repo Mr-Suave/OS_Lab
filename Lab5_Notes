@@ -1,0 +1,17 @@
+Lab5 - Demand Paging:
+when there is a page fault - we do a page load from disk - that is called demand Paging
+page fault exception (already exists) - this is the function that is triggered when a page fault exception happens
+
+what we need to implement - 
+when a page fault occurs, what happens?
+
+for that we need to understand - 
+what is the process flow of nachos?
+nachos doesnt have heap btw
+understand data blocks of nachos... where is DS, Stack, Code Segment etc...
+
+
+moreover, the test program must have atleast two pages, 
+if its just one page then the exception never gets triggered, yeah?
+
+

@@ -50,6 +50,7 @@
 #define SC_GetPid 54
 #define SC_Abs 55
 #define SC_Sleep 56
+#define SC_Pipe 57
 #ifndef IN_ASM
 
 /* The system call interface.  These are the operations the Nachos
@@ -84,6 +85,10 @@ int RandomNum();
 void ReadString(char *buffer, int length);
 
 void PrintString(char *buffer);
+
+//pipe syscall
+
+int Pipe(int *fds);
 
 // sleep syscall
 void Sleep(int ticks);

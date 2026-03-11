@@ -27,6 +27,6 @@ int main() {
             PrintString("I Am Child!\n");
         }
     } else {
-        Join();
+        Join(pid);
     }
 }

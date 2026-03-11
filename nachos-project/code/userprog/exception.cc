@@ -403,6 +403,58 @@ void handle_SC_GetPid() {
     return move_program_counter();
 }
 
+//pipe syscall handling
+
+void handle_SC_Pipe() {
+    // 1. Get the user-space address of the 'int fd[2]' array from Register 4
+    int userAddr = kernel->machine->ReadRegister(4);
+
+    // 2. Create the shared kernel PipeBuffer
+    PipeBuffer* pipe = new PipeBuffer();
+
+    // 3. Find two free slots in the current process's FD Table
+    // We'll need a way to scan the table we just added to the PCB
+    int readFD = -1;
+    int writeFD = -1;
+
+    for (int i = 2; i < MAX_FD; i++) { // Start at 2 (0 and 1 are stdin/out)
+        if (kernel->currentThread->pcb->fdTable[i].type == FD_FREE) {
+            if (readFD == -1) {
+                readFD = i;
+            } else {
+                writeFD = i;
+                break; 
+            }
+        }
+    }
+
+    // 4. If we couldn't find two slots, handle the error
+    if (writeFD == -1) {
+        delete pipe; // Clean up memory
+        kernel->machine->WriteRegister(2, -1); // Return -1 to user
+        return;
+    }
+
+    // 5. Fill the slots in the PCB
+    kernel->currentThread->pcb->fdTable[readFD].type = FD_PIPE_READ;
+    kernel->currentThread->pcb->fdTable[readFD].pipe = pipe;
+
+    kernel->currentThread->pcb->fdTable[writeFD].type = FD_PIPE_WRITE;
+    kernel->currentThread->pcb->fdTable[writeFD].pipe = pipe;
+
+    // 6. Copy the FD numbers back to the user's memory array
+    // We use WriteMem to put 'readFD' at userAddr and 'writeFD' at userAddr + 4
+    kernel->machine->WriteMem(userAddr, 4, readFD);
+    kernel->machine->WriteMem(userAddr + 4, 4, writeFD);
+
+    // 7. Success! Return 0
+    kernel->machine->WriteRegister(2, 0);
+
+    // Don't forget to advance the Program Counter!
+    // If you have a MovePC() function, call it here.
+    return move_program_counter();
+}
+
 void handle_SC_Sleep() {
     int ticks = kernel->machine->ReadRegister(4); //read the argument
     DEBUG(dbgSys, "User program calling Sleep for " << ticks << " ticks"); //debug mode
@@ -436,6 +488,8 @@ void ExceptionHandler(ExceptionType which) {
             switch (type) {
 		case SC_Abs:
 		    return handle_SC_Abs();
+                case SC_Pipe:
+                    return handle_SC_Pipe();
                 case SC_Halt:
                     return handle_SC_Halt();
                 case SC_Sleep:

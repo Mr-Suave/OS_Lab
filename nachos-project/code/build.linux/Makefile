@@ -351,7 +351,7 @@ switch.o: ../threads/switch.S
 	$(CC) $(CPP_AS_FLAGS) -P $(INCPATH) $(HOSTCFLAGS) -c ../threads/switch.S
 	
 pipebuffer.o: ../threads/pipebuffer.cc $(THREAD_H)
-	$(CC) $(CFLAGS) -c ../threads/pipebuffer.cc
+
 
 depend: $(CFILES) $(HFILES)
 	$(CC) $(INCPATH) $(DEFINES) $(HOSTCFLAGS) -DCHANGED -M $(CFILES) > makedep

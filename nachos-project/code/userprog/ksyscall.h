@@ -171,17 +171,63 @@ int SysOpen(char* fileName, int type) {
 int SysClose(int id) { return kernel->fileSystem->Close(id); }
 
 int SysRead(char* buffer, int charCount, int fileId) {
-    if (fileId == 0) {
-        return kernel->synchConsoleIn->GetString(buffer, charCount);
+    if (fileId < 0 || fileId >= MAX_FD) return -1;
+
+    FileDescriptor* fd = &(kernel->currentThread->pcb->fdTable[fileId]);
+
+    // 1. Route to Pipe
+    if (fd->type == FD_PIPE_READ) {
+        return fd->pipe->Read(buffer, charCount);
+    } 
+    // 2. Prevent reading from a Write-end
+    else if (fd->type == FD_PIPE_WRITE) {
+        DEBUG(dbgFile, "Error: Attempted read from a write-only pipe end.\n");
+        return -1;
     }
-    return kernel->fileSystem->Read(buffer, charCount, fileId);
+    // 3. Normal File/Console logic
+    else if (fileId == 0) { // stdin
+        for (int i = 0; i < charCount; i++) {
+            buffer[i] = kernel->synchConsoleIn->GetChar();
+        }
+        return charCount;
+    }
+    
+    // Default: return -1 or handle regular OpenFile*
+    return -1; 
 }
 
 int SysWrite(char* buffer, int charCount, int fileId) {
-    if (fileId == 1) {
-        return kernel->synchConsoleOut->PutString(buffer, charCount);
+    // 1. Check for valid FD range
+    if (fileId < 0 || fileId >= MAX_FD) return -1;
+
+    // 2. Get the FD entry from the current PCB
+    FileDescriptor* fd = &(kernel->currentThread->pcb->fdTable[fileId]);
+
+    // 3. Route based on type
+    if (fd->type == FD_PIPE_WRITE) {
+        // Use your PipeBuffer!
+        return fd->pipe->Write(buffer, charCount);
+    } 
+    else if (fd->type == FD_PIPE_READ) {
+        // Illegal operation: writing to a read-end
+        DEBUG(dbgFile, "Error: Attempted write to a read-only pipe end.\n");
+        return -1;
+    } 
+    else if (fd->type == FD_FREE) {
+        return -1; // File not open
     }
-    return kernel->fileSystem->Write(buffer, charCount, fileId);
+    
+    // 4. Fallback to normal File System or Console logic
+    // (This part likely already exists in your code)
+    if (fileId == 1) { // stdout
+        for (int i = 0; i < charCount; i++) {
+            kernel->synchConsoleOut->PutChar(buffer[i]);
+        }
+        return charCount;
+    }
+    
+    // If it's a regular file:
+    // return fd->file->Write(buffer, charCount);
 }
 
 int SysSeek(int seekPos, int fileId) {

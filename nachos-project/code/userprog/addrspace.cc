@@ -196,6 +196,11 @@ AddrSpace::AddrSpace(char *fileName) {
 void AddrSpace::Execute() {
     kernel->currentThread->space = this;
 
+    //initialise or give this thread a PCB!
+    if (kernel->currentThread->pcb == NULL) {
+        kernel->currentThread->pcb = new PCB(0);
+    }
+
     this->InitRegisters();  // set the initial register values
     this->RestoreState();   // load page table register
 

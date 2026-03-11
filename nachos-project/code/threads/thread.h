@@ -70,6 +70,7 @@ enum ThreadStatus { JUST_CREATED, RUNNING, READY, BLOCKED };
 //
 //  Some threads also belong to a user address space; threads
 //  that only run in the kernel have a NULL address space.
+class PCB;
 
 class Thread {
    private:
@@ -95,7 +96,7 @@ class Thread {
     }
 
     // basic thread operations
-
+    PCB *pcb;
     void Fork(VoidFunctionPtr func, void *arg);
     // Make thread run (*func)(arg)
     void Yield();                // Relinquish the CPU if any

@@ -250,6 +250,14 @@ PrintString:
 	j	$31
 	.end PrintString
 
+	.globl Pipe
+    .ent   Pipe
+Pipe:
+    addiu $2, $0, SC_Pipe
+    syscall
+    j     $31
+    .end   Pipe
+
 	.globl CreateFile
 	.ent	CreateFile
 CreateFile:

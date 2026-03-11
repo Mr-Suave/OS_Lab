@@ -21,6 +21,7 @@
 #include "switch.h"
 #include "synch.h"
 #include "sysdep.h"
+#include "pcb.h"
 
 // this is put at the top of the execution stack, for detecting stack overflows
 const int STACK_FENCEPOST = 0xdedbeef;
@@ -39,6 +40,7 @@ Thread::Thread(char *threadName, bool _has_dynamic_name /*=false*/) {
     stackTop = NULL;
     stack = NULL;
     status = JUST_CREATED;
+    pcb = NULL;
     for (int i = 0; i < MachineStateSize; i++) {
         machineState[i] = NULL;  // not strictly necessary, since
                                  // new thread ignores contents
