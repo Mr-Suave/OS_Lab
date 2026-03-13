@@ -8,12 +8,11 @@
 #include "syscall.h"
 
 int main() {
-    //int result;
+    int result;
 
-    //result = Add(42, 23);
-    int i;
-    for(i=0;i<1000000;i++){
-        PrintString("hello!\n");
-    }
+    result = Add(42, 23);
+    PrintString("Done adding :)) \n");
+    PrintNum(result);
+    PrintString("\n");
     /* not reached */
 }
