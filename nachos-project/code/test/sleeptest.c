@@ -6,7 +6,7 @@ int main() {
     PrintString("Starting sleep test...\n");
 
     for (i = 0; i < 5; i++) {
-        PrintString("Going to sleep for 500000 ticks...\n");
+        PrintString("Going to sleep for 10000 ticks...\n");
         
         Sleep(10000);
         
