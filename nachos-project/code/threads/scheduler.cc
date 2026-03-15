@@ -29,8 +29,14 @@
 //	Initially, no ready threads.
 //----------------------------------------------------------------------
 
+int ComparePriority(Thread *a, Thread *b) {
+    if (a->priority > b->priority) return -1; // a comes before b
+    if (a->priority < b->priority) return 1;  // a comes after b
+    return 0;                                 // equal
+}
+
 Scheduler::Scheduler() {
-    readyList = new List<Thread *>;
+    readyList = new SortedList<Thread *>(ComparePriority);
     toBeDestroyed = NULL;
 }
 
@@ -51,11 +57,12 @@ Scheduler::~Scheduler() { delete readyList; }
 
 void Scheduler::ReadyToRun(Thread *thread) {
     ASSERT(kernel->interrupt->getLevel() == IntOff);
-    DEBUG(dbgThread, "Putting thread on ready list: " << thread->getName());
-
     thread->setStatus(READY);
-    readyList->Append(thread);
+    readyList->Insert(thread);
+    // nothing else. no yield, no preemption, nothing.
 }
+
+
 
 //----------------------------------------------------------------------
 // Scheduler::FindNextToRun

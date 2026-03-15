@@ -39,6 +39,7 @@ Thread::Thread(char *threadName, bool _has_dynamic_name /*=false*/) {
     name = threadName;
     stackTop = NULL;
     stack = NULL;
+    priority = 10;
     status = JUST_CREATED;
     pcb = NULL;
     for (int i = 0; i < MachineStateSize; i++) {

@@ -15,7 +15,7 @@ PTable::PTable(int size) {
 PTable::~PTable() {
     int i;
     for (i = 0; i < psize; i++) {
-        if (!pcb[i]) delete pcb[i];
+        if (pcb[i]) delete pcb[i];
     }
     delete bmsem;
 }
@@ -72,8 +72,12 @@ int PTable::ExitUpdate(int exitcode) {
     // Nếu tiến trình gọi là main process thì gọi Halt().
     int id = kernel->currentThread->processID;
     if (id == 0) {
-        kernel->currentThread->FreeSpace();
-        kernel->interrupt->Halt();
+        // Only halt if no children are being waited on
+        if (pcb[0]->GetNumWait() == 0) {
+            kernel->currentThread->FreeSpace();
+            kernel->interrupt->Halt();
+        }
+        // Otherwise fall through — Join will have already blocked us
         return 0;
     }
 

@@ -51,6 +51,7 @@
 #define SC_Abs 55
 #define SC_Sleep 56
 #define SC_Pipe 57
+#define SC_SetPriority 58
 #ifndef IN_ASM
 
 /* The system call interface.  These are the operations the Nachos
@@ -81,6 +82,9 @@ char ReadChar();
 void PrintChar(char character);
 
 int RandomNum();
+
+// to set priority of thread 
+void SetPriority(int priority);
 
 void ReadString(char *buffer, int length);
 

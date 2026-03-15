@@ -94,6 +94,7 @@ class Thread {
     void FreeSpace() {
         if (space != 0) delete space;
     }
+    int priority;
 
     // basic thread operations
     PCB *pcb;

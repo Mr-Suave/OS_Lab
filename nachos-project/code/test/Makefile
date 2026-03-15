@@ -112,7 +112,7 @@ ifeq ($(hosttype),unknown)
 PROGRAMS = unknownhost
 else
 # change this if you create a new test program!
-PROGRAMS = sleeptest pipe abs add halt shell matmult sort segments test_syscall num_io char_io random str_io ascii bubblesort help create_file open_file readwrite exec test_sem sinhvien voinuoc main
+PROGRAMS = high low test_scheduler sleeptest pipe abs add halt shell matmult sort segments test_syscall num_io char_io random str_io ascii bubblesort help create_file open_file readwrite exec test_sem sinhvien voinuoc main
 endif
 
 all: $(PROGRAMS)
@@ -131,6 +131,26 @@ sleeptest.o: sleeptest.c
 sleeptest: sleeptest.o start.o
 	$(LD) $(LDFLAGS) start.o sleeptest.o -o sleeptest.coff
 	$(COFF2NOFF) sleeptest.coff sleeptest
+
+# scheduler scripts high low and test_scheduler
+high.o: high.c
+	$(CC) $(CFLAGS) -c high.c
+high: high.o start.o
+	$(LD) $(LDFLAGS) start.o high.o -o high.coff
+	$(COFF2NOFF) high.coff high
+
+low.o: low.c
+	$(CC) $(CFLAGS) -c low.c
+low: low.o start.o
+	$(LD) $(LDFLAGS) start.o low.o -o low.coff
+	$(COFF2NOFF) low.coff low
+
+
+test_scheduler.o: test_scheduler.c
+	$(CC) $(CFLAGS) -c test_scheduler.c
+test_scheduler: test_scheduler.o start.o
+	$(LD) $(LDFLAGS) start.o test_scheduler.o -o test_scheduler.coff
+	$(COFF2NOFF) test_scheduler.coff test_scheduler
 
 abs.o: abs.c
 	$(CC) $(CFLAGS) -c abs.c

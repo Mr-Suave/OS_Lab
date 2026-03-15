@@ -4,6 +4,7 @@
 
 PCB::PCB(int id) {
     this->processID = kernel->currentThread->processID;
+    
     joinsem = new Semaphore("joinsem", 0);
     exitsem = new Semaphore("exitsem", 0);
     multex = new Semaphore("multex", 1);
@@ -26,7 +27,7 @@ PCB::~PCB() {
         // delete thread;
     }
 
-    delete[] filename;
+    
 }
 
 void StartProcess_2(void* pid) {

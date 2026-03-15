@@ -463,6 +463,13 @@ void handle_SC_Sleep() {
 
 }
 
+void handle_SC_SetPriority() {
+    int newPriority = kernel->machine->ReadRegister(4);
+    kernel->currentThread->priority = newPriority;
+    move_program_counter();
+    // nothing else. no yield, no YieldOnReturn, nothing.
+}
+
 void ExceptionHandler(ExceptionType which) {
     int type = kernel->machine->ReadRegister(2);
 
@@ -500,6 +507,8 @@ void ExceptionHandler(ExceptionType which) {
                     return handle_SC_ReadNum();
                 case SC_PrintNum:
                     return handle_SC_PrintNum();
+                case SC_SetPriority:
+                    return handle_SC_SetPriority();
                 case SC_ReadChar:
                     return handle_SC_ReadChar();
                 case SC_PrintChar:

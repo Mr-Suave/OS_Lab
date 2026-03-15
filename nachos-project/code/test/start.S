@@ -74,6 +74,14 @@ Exit:
 	j	$31
 	.end Exit
 
+    .globl SetPriority
+    .ent	SetPriority
+SetPriority:
+    addiu $2, $0, SC_SetPriority
+    syscall
+    j	$31
+    .end	SetPriority
+
 	.globl Sleep
 	.ent	Sleep
 Sleep:
