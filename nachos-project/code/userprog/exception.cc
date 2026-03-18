@@ -25,6 +25,7 @@
 #include "main.h"
 #include "syscall.h"
 #include "ksyscall.h"
+#include "noff.h"
 //----------------------------------------------------------------------
 // ExceptionHandler
 // 	Entry point into the Nachos kernel.  Called when a user program
@@ -470,6 +471,55 @@ void handle_SC_SetPriority() {
     // nothing else. no yield, no YieldOnReturn, nothing.
 }
 
+void HandlePageFault(){
+    int vaddr = kernel->machine->ReadRegister(BadVAddrReg);
+    unsigned int vpn = (unsigned int)vaddr / PageSize;
+
+    AddrSpace *space = kernel->currentThread->space;
+    int pfn = kernel->gPhysPageBitMap->FindAndSet(); //get physical frame
+
+    if(pfn == -1){
+        //kill process because no physical frame found
+        DEBUG(dbgAddr, "Out of Physical Memory!\n");
+        SysHalt();
+    }
+    // zero out the frame in main memory
+    bzero(&(kernel->machine->mainMemory[pfn * PageSize]), PageSize);
+    NoffHeader *noffH = space->GetNoffHeader();
+    int fileOffset = -1;
+    // get the page
+    unsigned int pageStartVAddr = vpn * PageSize;
+
+    // check if its part of code segment or not:
+    if (pageStartVAddr >= noffH->code.virtualAddr && 
+        pageStartVAddr < noffH->code.virtualAddr + noffH->code.size) {
+        fileOffset = noffH->code.inFileAddr + (pageStartVAddr - noffH->code.virtualAddr);
+    } 
+    // Is this page part of the Initialized Data segment?
+    else if (pageStartVAddr >= noffH->initData.virtualAddr && 
+             pageStartVAddr < noffH->initData.virtualAddr + noffH->initData.size) {
+        fileOffset = noffH->initData.inFileAddr + (pageStartVAddr - noffH->initData.virtualAddr);
+    }
+
+    //load data from disk!
+    if (fileOffset != -1){
+        space->executableFile->ReadAt(
+            &(kernel->machine->mainMemory[pfn * PageSize]), 
+            PageSize, 
+            fileOffset
+        );
+    }
+
+    // 6. Update the Page Table
+    TranslationEntry *pageTable = space->GetPageTable();
+    pageTable[vpn].physicalPage = pfn;
+    pageTable[vpn].valid = TRUE;
+
+    DEBUG(dbgAddr, "Page Fault Resolved: VPN " << vpn << " -> PFN " << pfn << "\n");
+}
+
+
+
 void ExceptionHandler(ExceptionType which) {
     int type = kernel->machine->ReadRegister(2);
 
@@ -481,6 +531,8 @@ void ExceptionHandler(ExceptionType which) {
             DEBUG(dbgSys, "Switch to system mode\n");
             break;
         case PageFaultException:
+            HandlePageFault();
+            return;
         case ReadOnlyException:
         case BusErrorException:
         case AddressErrorException:
