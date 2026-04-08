@@ -1,0 +1,21 @@
+Implement Malloc syscall:
+malloc returns a void pointer - 
+void *my_malloc(unsigned int bytes)
+
+Use brk pointer to return pointer to allocated memory block
+(maybe implement free too)
+
+Simulate a linked list inside an array - 
+[pointer to next block + data, pointer to next block + data, pointer to next block + data.....]
+
+Algorithm:
+metadata of block = pointer to next, pointer to previous, and block size
+brk - metadata block = point to last block of allocated list..
+
+also have a free list for blocks that are free
+
+when brk is called = allocate the pointer that is next to brk*
+
+then when free is called just add this block to the free list...
+
+

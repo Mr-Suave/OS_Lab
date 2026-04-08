@@ -58,6 +58,23 @@ void readUntilBlank() {
     }
 }
 
+// implemented for malloc 
+void copyFromUser(int vaddr, char* kernelBuffer, int size) {
+    for (int i = 0; i < size; i++) {
+        int data;
+        // Read 1 byte from user virtual address
+        kernel->machine->ReadMem(vaddr + i, 1, &data);
+        kernelBuffer[i] = (char)data;
+    }
+}
+
+void copyToUser(int vaddr, char* kernelBuffer, int size) {
+    for (int i = 0; i < size; i++) {
+        // Write 1 byte to user virtual address
+        kernel->machine->WriteMem(vaddr + i, 1, (int)kernelBuffer[i]);
+    }
+}
+
 /**
  * Return true of the interger equals to the
  * interger stored in the string

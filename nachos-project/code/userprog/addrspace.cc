@@ -76,6 +76,8 @@ AddrSpace::AddrSpace() {
 
     // // zero out the entire address space
     // bzero(kernel->machine->mainMemory, MemorySize);
+    this->heapStart = 0;
+    this->brk = numPages * PageSize;
 }
 
 //----------------------------------------------------------------------

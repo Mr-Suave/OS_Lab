@@ -42,6 +42,13 @@ class AddrSpace {
     // is 0 for Read, 1 for Write.
     ExceptionType Translate(unsigned int vaddr, unsigned int *paddr, int mode);
     // void InitRegisters();
+
+    int getHeapStart() {return heapStart; }
+    int getnumPages() { return numPages; }
+    int setHeapStart(int val) { heapStart = val; }
+    int getBrk() { return brk; }
+    void setBrk(int val) { brk = val; }
+
    private:
     TranslationEntry *pageTable;  // Assume linear page table translation
                                   // for now!
@@ -51,6 +58,8 @@ class AddrSpace {
     void InitRegisters();  // Initialize user-level CPU registers,
                            // before jumping to user code
     NoffHeader noffH;
+    int heapStart; //virtual address of first block header
+    int brk; //vaddr of current top of header
 };
 
 #endif  // ADDRSPACE_H

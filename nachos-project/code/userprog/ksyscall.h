@@ -20,6 +20,14 @@
 
 void SysHalt() { kernel->interrupt->Halt(); }
 
+//linked list type of structure 
+struct MallocHeader {
+    unsigned int size; // Size of user data
+    int isFree;        // 1 if free, 0 if used
+    int next;          // Virtual address of next MallocHeader
+    
+};
+
 int SysAdd(int op1, int op2) { return op1 + op2; }
 unsigned int SysAbs(int op1) { return op1 > 0 ? op1 : -op1; }
 int SysReadNum() {
@@ -250,6 +258,78 @@ int SysExec(char* name) {
 
     // Return child process id
     return kernel->pTab->ExecUpdate(name);
+}
+
+int SysMalloc(int bytes) {
+    if (bytes <= 0) return 0;
+    bytes = (bytes + 3) & ~3; // 4-byte alignment
+
+    AddrSpace *space = kernel->currentThread->space;
+    int currentAddr = space->getHeapStart();
+    int lastAddr = 0;
+    MallocHeader h;
+
+    // 1. Search existing blocks (The Linked List)
+    while (currentAddr != 0) {
+        copyFromUser(currentAddr, (char*)&h, sizeof(h));
+        if (h.isFree && h.size >= (unsigned int)bytes) {
+            h.isFree = 0; // Found a hole!
+            copyToUser(currentAddr, (char*)&h, sizeof(h));
+            return currentAddr + sizeof(MallocHeader);
+        }
+        lastAddr = currentAddr;
+        currentAddr = h.next;
+    }
+
+    // 2. No hole found? Use 'brk' to create a new one
+    int oldBrk = space->getBrk();
+    int newBrk = oldBrk + sizeof(MallocHeader) + bytes;
+
+    // Boundary check: Don't collide with the stack
+    // (Note: Nachos stacks usually grow down from the very top)
+    int numPages = space->getnumPages();
+    if (newBrk >= (numPages * PageSize) + UserStackSize) { 
+        return 0; 
+    }
+
+    MallocHeader newH = { (unsigned int)bytes, 0, 0 };
+    copyToUser(oldBrk, (char*)&newH, sizeof(newH));
+
+    // 3. Update the "Next" pointer of the previous tail
+    if (lastAddr != 0) {
+        MallocHeader lastH;
+        copyFromUser(lastAddr, (char*)&lastH, sizeof(lastH));
+        lastH.next = oldBrk;
+        copyToUser(lastAddr, (char*)&lastH, sizeof(lastH));
+    } else {
+        space->setHeapStart(oldBrk); // This is the first block
+    }
+
+    space->setBrk(newBrk);
+    return oldBrk + sizeof(MallocHeader);
+}
+
+// for malloc command:
+void SysFree(int ptr) {
+    if (ptr <= 0) return;
+
+    int headerAddr = ptr - sizeof(MallocHeader);
+    MallocHeader h;
+    copyFromUser(headerAddr, (char*)&h, sizeof(h));
+
+    h.isFree = 1;
+
+    // Optional: Simple Coalescing (The "Attachment")
+    if (h.next != 0) {
+        MallocHeader nextH;
+        copyFromUser(h.next, (char*)&nextH, sizeof(nextH));
+        if (nextH.isFree) {
+            h.size += sizeof(MallocHeader) + nextH.size;
+            h.next = nextH.next;
+        }
+    }
+
+    copyToUser(headerAddr, (char*)&h, sizeof(h));
 }
 
 int SysJoin(int id) { return kernel->pTab->JoinUpdate(id); }
