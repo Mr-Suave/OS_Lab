@@ -501,7 +501,7 @@ void HandlePageFault(){
         fileOffset = noffH->initData.inFileAddr + (pageStartVAddr - noffH->initData.virtualAddr);
     }
 
-    //load data from disk!
+    //load data from VM to PHYSICAL SPACE!
     if (fileOffset != -1){
         space->executableFile->ReadAt(
             &(kernel->machine->mainMemory[pfn * PageSize]), 
