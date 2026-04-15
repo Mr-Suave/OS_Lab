@@ -82,6 +82,22 @@ SetPriority:
     j	$31
     .end	SetPriority
 
+	.globl Malloc
+    .ent Malloc
+Malloc:
+    addiu $2,$0,SC_Malloc
+    syscall
+    j $31
+    .end Malloc
+
+    .globl Free
+    .ent Free
+Free:
+    addiu $2,$0,SC_Free
+    syscall
+    j $31
+    .end Free
+
 	.globl Sleep
 	.ent	Sleep
 Sleep:

@@ -287,9 +287,12 @@ int SysMalloc(int bytes) {
 
     // Boundary check: Don't collide with the stack
     // (Note: Nachos stacks usually grow down from the very top)
-    int numPages = space->getnumPages();
-    if (newBrk >= (numPages * PageSize) + UserStackSize) { 
-        return 0; 
+    // The stack starts at (Total Memory - Stack Size)
+    int stackLimit = (space->getnumPages() * PageSize) - UserStackSize;
+
+    if (newBrk >= stackLimit) {
+        DEBUG(dbgAddr, "Malloc Error: Out of memory (Heap hit Stack limit)");
+        return 0; // Return NULL to user
     }
 
     MallocHeader newH = { (unsigned int)bytes, 0, 0 };

@@ -456,6 +456,35 @@ void handle_SC_Pipe() {
     return move_program_counter();
 }
 
+void handle_SC_Malloc() {
+    // 1. Read the 'bytes' argument from Register 4
+    int bytes = kernel->machine->ReadRegister(4);
+
+    // 2. Call your logic function
+    int resultVAddr = SysMalloc(bytes);
+
+    // 3. Write the resulting virtual address to Register 2
+    kernel->machine->WriteRegister(2, resultVAddr);
+
+    // 4. Advance the Program Counter
+    /* Shift PC: Prev = Curr, Curr = Next, Next = Next + 4 */
+    return move_program_counter();
+}
+
+void handle_SC_Free() {
+    // 1. Read the 'ptr' (virtual address) from Register 4
+    int ptrVAddr = kernel->machine->ReadRegister(4);
+
+    // 2. Call your logic function
+    SysFree(ptrVAddr);
+
+    // 3. Free doesn't usually return a value, but we can clear Reg 2
+    kernel->machine->WriteRegister(2, 0);
+
+    // 4. Advance the Program Counter
+    return move_program_counter();
+}
+
 void handle_SC_Sleep() {
     int ticks = kernel->machine->ReadRegister(4); //read the argument
     DEBUG(dbgSys, "User program calling Sleep for " << ticks << " ticks"); //debug mode
@@ -547,6 +576,10 @@ void ExceptionHandler(ExceptionType which) {
             switch (type) {
 		case SC_Abs:
 		    return handle_SC_Abs();
+                case SC_Malloc:
+                    return handle_SC_Malloc();
+                case SC_Free:
+                    return handle_SC_Free();
                 case SC_Pipe:
                     return handle_SC_Pipe();
                 case SC_Halt:

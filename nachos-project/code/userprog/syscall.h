@@ -52,6 +52,8 @@
 #define SC_Sleep 56
 #define SC_Pipe 57
 #define SC_SetPriority 58
+#define SC_Malloc 59
+#define SC_Free 60
 #ifndef IN_ASM
 
 /* The system call interface.  These are the operations the Nachos

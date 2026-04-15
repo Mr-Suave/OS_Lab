@@ -76,8 +76,8 @@ AddrSpace::AddrSpace() {
 
     // // zero out the entire address space
     // bzero(kernel->machine->mainMemory, MemorySize);
-    this->heapStart = 0;
-    this->brk = numPages * PageSize;
+    this->heapStart = noffH.uninitData.virtualAddr + noffH.uninitData.size;;
+    this->brk = this->heapStart;
 }
 
 //----------------------------------------------------------------------
@@ -128,6 +128,10 @@ AddrSpace::AddrSpace(char *fileName) {
     size = noffH.code.size + noffH.initData.size + noffH.uninitData.size +
            UserStackSize;  // we need to increase the size
                            // to leave room for the stack
+    
+    unsigned int heapReserve = 16 * PageSize;
+    size += heapReserve;
+
     numPages = divRoundUp(size, PageSize);
     size = numPages * PageSize;
 

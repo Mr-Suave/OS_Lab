@@ -45,7 +45,7 @@ class AddrSpace {
 
     int getHeapStart() {return heapStart; }
     int getnumPages() { return numPages; }
-    int setHeapStart(int val) { heapStart = val; }
+    void setHeapStart(int val) { heapStart = val; }
     int getBrk() { return brk; }
     void setBrk(int val) { brk = val; }
 
