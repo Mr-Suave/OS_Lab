@@ -76,8 +76,7 @@ AddrSpace::AddrSpace() {
 
     // // zero out the entire address space
     // bzero(kernel->machine->mainMemory, MemorySize);
-    this->heapStart = noffH.uninitData.virtualAddr + noffH.uninitData.size;;
-    this->brk = this->heapStart;
+    
 }
 
 //----------------------------------------------------------------------
@@ -186,7 +185,8 @@ AddrSpace::AddrSpace(char *fileName) {
     //                 (pageTable[i].physicalPage * PageSize),
     //             PageSize, noffH.initData.inFileAddr + (i * PageSize));
     // }
-
+    this->heapStart = noffH.uninitData.virtualAddr + noffH.uninitData.size;
+    this->brk = this->heapStart;
     kernel->addrLock->V();
     //delete executable;
     this->executableFile = executable;
