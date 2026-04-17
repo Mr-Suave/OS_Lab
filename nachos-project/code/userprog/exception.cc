@@ -51,6 +51,31 @@
 //	is in machine.h.
 //----------------------------------------------------------------------
 
+void HandlePageFault();
+
+/**
+ * @brief Safe memory access for ReadMem that manually triggers HandlePageFault
+ * if the page is not in memory. Essential for Demand Paging in Kernel Mode.
+ */
+bool safeReadUserMem(int vaddr, int size, int* value) {
+    while (!kernel->machine->ReadMem(vaddr, size, value)) {
+        kernel->machine->WriteRegister(BadVAddrReg, vaddr);
+        HandlePageFault();
+    }
+    return true;
+}
+
+/**
+ * @brief Safe memory access for WriteMem that manually triggers HandlePageFault.
+ */
+bool safeWriteUserMem(int vaddr, int size, int value) {
+    while (!kernel->machine->WriteMem(vaddr, size, value)) {
+        kernel->machine->WriteRegister(BadVAddrReg, vaddr);
+        HandlePageFault();
+    }
+    return true;
+}
+
 /**
  * @brief Convert user string to system string
  *
@@ -66,10 +91,7 @@ char* stringUser2System(int addr, int convert_length = -1) {
     
     do {
         int oneChar;
-        bool result = kernel->machine->ReadMem(addr + length, 1, &oneChar);
-         // add this
-        while (!kernel->machine->ReadMem(addr + length, 1, &oneChar));
-        // printf("DEBUG ReadMem result AFTER WHILE LOOP: addr=%d result=%d oneChar=%d\n", addr+length, result, oneChar);
+        safeReadUserMem(addr + length, 1, &oneChar);
         str[length] = (unsigned char)oneChar;
         length++;
         stop = ((oneChar == '\0' && convert_length == -1) ||
@@ -91,9 +113,9 @@ char* stringUser2System(int addr, int convert_length = -1) {
 void StringSys2User(char* str, int addr, int convert_length = -1) {
     int length = (convert_length == -1 ? strlen(str) : convert_length);
     for (int i = 0; i < length; i++) {
-        while (!kernel->machine->WriteMem(addr + i, 1, str[i]));
+        safeWriteUserMem(addr + i, 1, (int)str[i]);
     }
-    while (!kernel->machine->WriteMem(addr + length, 1, '\0'));
+    safeWriteUserMem(addr + length, 1, '\0');
 }
 
 /**
@@ -248,15 +270,25 @@ void handle_SC_Close() {
 void handle_SC_Read() {
     int virtAddr = kernel->machine->ReadRegister(4);
     int charCount = kernel->machine->ReadRegister(5);
-    char* buffer = stringUser2System(virtAddr, charCount);
     int fileId = kernel->machine->ReadRegister(6);
 
     DEBUG(dbgFile,
           "Read " << charCount << " chars from file " << fileId << "\n");
 
-    kernel->machine->WriteRegister(2, SysRead(buffer, charCount, fileId));
-    StringSys2User(buffer, virtAddr, charCount);
+    // Allocate kernel buffer for the result
+    char* buffer = new char[charCount + 1];
 
+    // Read from pipe/file/console
+    int result = SysRead(buffer, charCount, fileId);
+
+    // If any data was read, copy it BACK to user memory safely
+    if (result > 0) {
+        for (int i = 0; i < result; i++) {
+            safeWriteUserMem(virtAddr + i, 1, (int)buffer[i]);
+        }
+    }
+
+    kernel->machine->WriteRegister(2, result);
     delete[] buffer;
     return move_program_counter();
 }
@@ -264,15 +296,23 @@ void handle_SC_Read() {
 void handle_SC_Write() {
     int virtAddr = kernel->machine->ReadRegister(4);
     int charCount = kernel->machine->ReadRegister(5);
-    char* buffer = stringUser2System(virtAddr, charCount);
     int fileId = kernel->machine->ReadRegister(6);
 
     DEBUG(dbgFile,
           "Write " << charCount << " chars to file " << fileId << "\n");
 
-    kernel->machine->WriteRegister(2, SysWrite(buffer, charCount, fileId));
-    StringSys2User(buffer, virtAddr, charCount);
+    // Copy FROM user memory to kernel buffer safely
+    char* buffer = new char[charCount + 1];
+    for (int i = 0; i < charCount; i++) {
+        int oneChar;
+        safeReadUserMem(virtAddr + i, 1, &oneChar);
+        buffer[i] = (char)oneChar;
+    }
 
+    // Write data to pipe/file/console
+    int result = SysWrite(buffer, charCount, fileId);
+
+    kernel->machine->WriteRegister(2, result);
     delete[] buffer;
     return move_program_counter();
 }
@@ -403,52 +443,29 @@ void handle_SC_GetPid() {
 //pipe syscall handling
 
 void handle_SC_Pipe() {
-    // 1. Get the user-space address of the 'int fd[2]' array from Register 4
     int userAddr = kernel->machine->ReadRegister(4);
 
-    // 2. Create the shared kernel PipeBuffer
+    // 1. Create the shared kernel PipeBuffer
     PipeBuffer* pipe = new PipeBuffer();
 
-    // 3. Find two free slots in the current process's FD Table
-    // We'll need a way to scan the table we just added to the PCB
-    int readFD = -1;
-    int writeFD = -1;
+    // 2. Allocate two free slots in the FD Table
+    int readFD = kernel->currentThread->pcb->AllocFd(FD_PIPE_READ, pipe);
+    int writeFD = kernel->currentThread->pcb->AllocFd(FD_PIPE_WRITE, pipe);
 
-    for (int i = 2; i < MAX_FD; i++) { // Start at 2 (0 and 1 are stdin/out)
-        if (kernel->currentThread->pcb->fdTable[i].type == FD_FREE) {
-            if (readFD == -1) {
-                readFD = i;
-            } else {
-                writeFD = i;
-                break; 
-            }
-        }
+    // 3. Handle allocation failure
+    if (readFD == -1 || writeFD == -1) {
+        if (readFD != -1) kernel->currentThread->pcb->fdTable[readFD].type = FD_FREE;
+        delete pipe;
+        kernel->machine->WriteRegister(2, -1);
+        return move_program_counter();
     }
 
-    // 4. If we couldn't find two slots, handle the error
-    if (writeFD == -1) {
-        delete pipe; // Clean up memory
-        kernel->machine->WriteRegister(2, -1); // Return -1 to user
-        return;
-    }
+    // 4. Copy the FD numbers back to user memory safely
+    safeWriteUserMem(userAddr, 4, readFD);
+    safeWriteUserMem(userAddr + 4, 4, writeFD);
 
-    // 5. Fill the slots in the PCB
-    kernel->currentThread->pcb->fdTable[readFD].type = FD_PIPE_READ;
-    kernel->currentThread->pcb->fdTable[readFD].pipe = pipe;
-
-    kernel->currentThread->pcb->fdTable[writeFD].type = FD_PIPE_WRITE;
-    kernel->currentThread->pcb->fdTable[writeFD].pipe = pipe;
-
-    // 6. Copy the FD numbers back to the user's memory array
-    // We use WriteMem to put 'readFD' at userAddr and 'writeFD' at userAddr + 4
-    while (!kernel->machine->WriteMem(userAddr, 4, readFD));
-    while (!kernel->machine->WriteMem(userAddr + 4, 4, writeFD));
-
-    // 7. Success! Return 0
+    // 5. Success
     kernel->machine->WriteRegister(2, 0);
-
-    // Don't forget to advance the Program Counter!
-    // If you have a MovePC() function, call it here.
     return move_program_counter();
 }
 
@@ -497,16 +514,13 @@ void handle_SC_SetPriority() {
 }
 
 void HandlePageFault() {
+    kernel->stats->numPageFaults++;
     int vaddr = kernel->machine->ReadRegister(BadVAddrReg);
     int vpn = (int)((unsigned int)vaddr / PageSize);
     AddrSpace *space = kernel->currentThread->space;
     
     NoffHeader *noffH = space->GetNoffHeader();
-    int pageStartVAddr = vpn * PageSize;  // ← int, not unsigned int
-
-    // printf("DEBUG PageFault: vaddr=%d vpn=%d pageStartVAddr=%d\n", vaddr, vpn, pageStartVAddr);
-    // printf("DEBUG code: virtualAddr=%d size=%d inFileAddr=%d\n", 
-    //        noffH->code.virtualAddr, noffH->code.size, noffH->code.inFileAddr);
+    int pageStartVAddr = vpn * PageSize;
 
     int pfn = kernel->gPhysPageBitMap->FindAndSet();
     if (pfn == -1) {
@@ -531,11 +545,6 @@ void HandlePageFault() {
         } else {
             inFileAddr += (pageStartVAddr - noffH->code.virtualAddr);
         }
-
-       
-
-        // printf("DEBUG: loading CODE pfn=%d offsetInPage=%d readSize=%d inFileAddr=%d\n",
-        //        pfn, offsetInPage, readSize, inFileAddr);
 
         space->executableFile->ReadAt(
             &(kernel->machine->mainMemory[pfn * PageSize + offsetInPage]), 
@@ -562,25 +571,41 @@ void HandlePageFault() {
             readSize = (noffH->initData.virtualAddr + noffH->initData.size) - (pageStartVAddr + offsetInPage);
         }
 
-        // printf("DEBUG: loading DATA pfn=%d offsetInPage=%d readSize=%d inFileAddr=%d\n",
-        //        pfn, offsetInPage, readSize, inFileAddr);
+        space->executableFile->ReadAt(
+            &(kernel->machine->mainMemory[pfn * PageSize + offsetInPage]), 
+            readSize, inFileAddr);
+    }
+
+#ifdef RDATA
+    // --- READONLY DATA SEGMENT ---
+    if (noffH->readonlyData.size > 0 && 
+        pageStartVAddr < (noffH->readonlyData.virtualAddr + noffH->readonlyData.size) &&
+        (pageStartVAddr + PageSize) > noffH->readonlyData.virtualAddr) {
+        
+        int offsetInPage = 0;
+        int readSize = PageSize;
+        int inFileAddr = noffH->readonlyData.inFileAddr;
+
+        if (pageStartVAddr < noffH->readonlyData.virtualAddr) {
+            offsetInPage = noffH->readonlyData.virtualAddr - pageStartVAddr;
+            readSize -= offsetInPage;
+        } else {
+            inFileAddr += (pageStartVAddr - noffH->readonlyData.virtualAddr);
+        }
+
+        if (pageStartVAddr + PageSize > noffH->readonlyData.virtualAddr + noffH->readonlyData.size) {
+            readSize = (noffH->readonlyData.virtualAddr + noffH->readonlyData.size) - (pageStartVAddr + offsetInPage);
+        }
 
         space->executableFile->ReadAt(
             &(kernel->machine->mainMemory[pfn * PageSize + offsetInPage]), 
             readSize, inFileAddr);
     }
-    // printf("DEBUG initData: virtualAddr=%d size=%d\n", 
-    //    noffH->initData.virtualAddr, noffH->initData.size);
-    // printf("DEBUG uninitData: virtualAddr=%d size=%d\n",
-    //    noffH->uninitData.virtualAddr, noffH->uninitData.size);
+#endif
 
     TranslationEntry *pageTable = space->GetPageTable();
     pageTable[vpn].physicalPage = pfn;
     pageTable[vpn].valid = TRUE;
-
-    //  for (int i = 0; i < TLBSize; i++) {
-    //     kernel->machine->tlb[i].valid = FALSE;
-    // }
 }
 
 
