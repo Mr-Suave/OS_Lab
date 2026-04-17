@@ -26,6 +26,7 @@
 #include "syscall.h"
 #include "ksyscall.h"
 #include "noff.h"
+#define MAX_READ_STRING_LENGTH 255
 //----------------------------------------------------------------------
 // ExceptionHandler
 // 	Entry point into the Nachos kernel.  Called when a user program
@@ -61,25 +62,20 @@
 char* stringUser2System(int addr, int convert_length = -1) {
     int length = 0;
     bool stop = false;
-    char* str;
-
+    char* str = new char[MAX_READ_STRING_LENGTH];
+    
     do {
         int oneChar;
-        kernel->machine->ReadMem(addr + length, 1, &oneChar);
+        bool result = kernel->machine->ReadMem(addr + length, 1, &oneChar);
+         // add this
+        while (!kernel->machine->ReadMem(addr + length, 1, &oneChar));
+        // printf("DEBUG ReadMem result AFTER WHILE LOOP: addr=%d result=%d oneChar=%d\n", addr+length, result, oneChar);
+        str[length] = (unsigned char)oneChar;
         length++;
-        // if convert_length == -1, we use '\0' to terminate the process
-        // otherwise, we use convert_length to terminate the process
         stop = ((oneChar == '\0' && convert_length == -1) ||
                 length == convert_length);
     } while (!stop);
-
-    str = new char[length];
-    for (int i = 0; i < length; i++) {
-        int oneChar;
-        kernel->machine->ReadMem(addr + i, 1,
-                                 &oneChar);  // copy characters to kernel space
-        str[i] = (unsigned char)oneChar;
-    }
+    
     return str;
 }
 
@@ -95,10 +91,9 @@ char* stringUser2System(int addr, int convert_length = -1) {
 void StringSys2User(char* str, int addr, int convert_length = -1) {
     int length = (convert_length == -1 ? strlen(str) : convert_length);
     for (int i = 0; i < length; i++) {
-        kernel->machine->WriteMem(addr + i, 1,
-                                  str[i]);  // copy characters to user space
+        while (!kernel->machine->WriteMem(addr + i, 1, str[i]));
     }
-    kernel->machine->WriteMem(addr + length, 1, '\0');
+    while (!kernel->machine->WriteMem(addr + length, 1, '\0'));
 }
 
 /**
@@ -195,7 +190,7 @@ void handle_SC_RandomNum() {
     return move_program_counter();
 }
 
-#define MAX_READ_STRING_LENGTH 255
+
 void handle_SC_ReadString() {
     int memPtr = kernel->machine->ReadRegister(4);  // read address of C-string
     int length = kernel->machine->ReadRegister(5);  // read length of C-string
@@ -210,9 +205,10 @@ void handle_SC_ReadString() {
 }
 
 void handle_SC_PrintString() {
-    int memPtr = kernel->machine->ReadRegister(4);  // read address of C-string
+    int memPtr = kernel->machine->ReadRegister(4);
+    // printf("DEBUG handle_SC_PrintString: memPtr=%d\n", memPtr);  // add this
     char* buffer = stringUser2System(memPtr);
-
+    // printf("DEBUG: buffer='%s' strlen=%d\n", buffer, (int)strlen(buffer));  // add this
     SysPrintString(buffer, strlen(buffer));
     delete[] buffer;
     return move_program_counter();
@@ -445,8 +441,8 @@ void handle_SC_Pipe() {
 
     // 6. Copy the FD numbers back to the user's memory array
     // We use WriteMem to put 'readFD' at userAddr and 'writeFD' at userAddr + 4
-    kernel->machine->WriteMem(userAddr, 4, readFD);
-    kernel->machine->WriteMem(userAddr + 4, 4, writeFD);
+    while (!kernel->machine->WriteMem(userAddr, 4, readFD));
+    while (!kernel->machine->WriteMem(userAddr + 4, 4, writeFD));
 
     // 7. Success! Return 0
     kernel->machine->WriteRegister(2, 0);
@@ -500,51 +496,91 @@ void handle_SC_SetPriority() {
     // nothing else. no yield, no YieldOnReturn, nothing.
 }
 
-void HandlePageFault(){
+void HandlePageFault() {
     int vaddr = kernel->machine->ReadRegister(BadVAddrReg);
-    unsigned int vpn = (unsigned int)vaddr / PageSize;
-
+    int vpn = (int)((unsigned int)vaddr / PageSize);
     AddrSpace *space = kernel->currentThread->space;
-    int pfn = kernel->gPhysPageBitMap->FindAndSet(); //get physical frame
-
-    if(pfn == -1){
-        //kill process because no physical frame found
-        DEBUG(dbgAddr, "Out of Physical Memory!\n");
-        SysHalt();
-    }
-    // zero out the frame in main memory
-    bzero(&(kernel->machine->mainMemory[pfn * PageSize]), PageSize);
+    
     NoffHeader *noffH = space->GetNoffHeader();
-    int fileOffset = -1;
-    // get the page
-    unsigned int pageStartVAddr = vpn * PageSize;
+    int pageStartVAddr = vpn * PageSize;  // ← int, not unsigned int
 
-    // check if its part of code segment or not:
-    if (pageStartVAddr >= noffH->code.virtualAddr && 
-        pageStartVAddr < noffH->code.virtualAddr + noffH->code.size) {
-        fileOffset = noffH->code.inFileAddr + (pageStartVAddr - noffH->code.virtualAddr);
-    } 
-    // Is this page part of the Initialized Data segment?
-    else if (pageStartVAddr >= noffH->initData.virtualAddr && 
-             pageStartVAddr < noffH->initData.virtualAddr + noffH->initData.size) {
-        fileOffset = noffH->initData.inFileAddr + (pageStartVAddr - noffH->initData.virtualAddr);
+    // printf("DEBUG PageFault: vaddr=%d vpn=%d pageStartVAddr=%d\n", vaddr, vpn, pageStartVAddr);
+    // printf("DEBUG code: virtualAddr=%d size=%d inFileAddr=%d\n", 
+    //        noffH->code.virtualAddr, noffH->code.size, noffH->code.inFileAddr);
+
+    int pfn = kernel->gPhysPageBitMap->FindAndSet();
+    if (pfn == -1) {
+        SysHalt();
+        return;
     }
 
-    //load data from VM to PHYSICAL SPACE!
-    if (fileOffset != -1){
+    bzero(&(kernel->machine->mainMemory[pfn * PageSize]), PageSize);
+    
+    // --- CODE SEGMENT ---
+    if (noffH->code.size > 0 && 
+        pageStartVAddr < (noffH->code.virtualAddr + noffH->code.size) &&
+        (pageStartVAddr + PageSize) > noffH->code.virtualAddr) {
+        
+        int offsetInPage = 0;
+        int readSize = PageSize;
+        int inFileAddr = noffH->code.inFileAddr;
+
+        if (pageStartVAddr < noffH->code.virtualAddr) {
+            offsetInPage = noffH->code.virtualAddr - pageStartVAddr;
+            readSize -= offsetInPage;
+        } else {
+            inFileAddr += (pageStartVAddr - noffH->code.virtualAddr);
+        }
+
+       
+
+        // printf("DEBUG: loading CODE pfn=%d offsetInPage=%d readSize=%d inFileAddr=%d\n",
+        //        pfn, offsetInPage, readSize, inFileAddr);
+
         space->executableFile->ReadAt(
-            &(kernel->machine->mainMemory[pfn * PageSize]), 
-            PageSize, 
-            fileOffset
-        );
+            &(kernel->machine->mainMemory[pfn * PageSize + offsetInPage]), 
+            readSize, inFileAddr);
     }
 
-    // 6. Update the Page Table
+    // --- DATA SEGMENT ---
+    if (noffH->initData.size > 0 && 
+        pageStartVAddr < (noffH->initData.virtualAddr + noffH->initData.size) &&
+        (pageStartVAddr + PageSize) > noffH->initData.virtualAddr) {
+        
+        int offsetInPage = 0;
+        int readSize = PageSize;
+        int inFileAddr = noffH->initData.inFileAddr;
+
+        if (pageStartVAddr < noffH->initData.virtualAddr) {
+            offsetInPage = noffH->initData.virtualAddr - pageStartVAddr;
+            readSize -= offsetInPage;
+        } else {
+            inFileAddr += (pageStartVAddr - noffH->initData.virtualAddr);
+        }
+
+        if (pageStartVAddr + PageSize > noffH->initData.virtualAddr + noffH->initData.size) {
+            readSize = (noffH->initData.virtualAddr + noffH->initData.size) - (pageStartVAddr + offsetInPage);
+        }
+
+        // printf("DEBUG: loading DATA pfn=%d offsetInPage=%d readSize=%d inFileAddr=%d\n",
+        //        pfn, offsetInPage, readSize, inFileAddr);
+
+        space->executableFile->ReadAt(
+            &(kernel->machine->mainMemory[pfn * PageSize + offsetInPage]), 
+            readSize, inFileAddr);
+    }
+    // printf("DEBUG initData: virtualAddr=%d size=%d\n", 
+    //    noffH->initData.virtualAddr, noffH->initData.size);
+    // printf("DEBUG uninitData: virtualAddr=%d size=%d\n",
+    //    noffH->uninitData.virtualAddr, noffH->uninitData.size);
+
     TranslationEntry *pageTable = space->GetPageTable();
     pageTable[vpn].physicalPage = pfn;
     pageTable[vpn].valid = TRUE;
 
-    DEBUG(dbgAddr, "Page Fault Resolved: VPN " << vpn << " -> PFN " << pfn << "\n");
+    //  for (int i = 0; i < TLBSize; i++) {
+    //     kernel->machine->tlb[i].valid = FALSE;
+    // }
 }
 
 

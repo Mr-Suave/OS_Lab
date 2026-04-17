@@ -64,6 +64,7 @@ void Bitmap::Mark(int which) {
 //----------------------------------------------------------------------
 
 void Bitmap::Clear(int which) {
+    // printf("DEBUG: Clearing bit %d (Total bits: %d)\n", which, numBits);
     ASSERT(which >= 0 && which < numBits);
 
     map[which / BitsInWord] &= ~(1 << (which % BitsInWord));

@@ -85,9 +85,10 @@ AddrSpace::AddrSpace() {
 //----------------------------------------------------------------------
 
 AddrSpace::~AddrSpace() {
-    int i;
-    for (i = 0; i < numPages; i++) {
-        kernel->gPhysPageBitMap->Clear(pageTable[i].physicalPage);
+    for (int i = 0; i < numPages; i++) {  // ← for loop
+        if (pageTable[i].valid) {
+            kernel->gPhysPageBitMap->Clear(pageTable[i].physicalPage);
+        }
     }
     delete[] pageTable;
 }
@@ -141,13 +142,13 @@ AddrSpace::AddrSpace(char *fileName) {
 
     // Check the available memory enough to load new process
     // debug
-    if (numPages > kernel->gPhysPageBitMap->NumClear()) {
-        DEBUG(dbgAddr, "Not enough free space");
-        numPages = 0;
-        delete executable;
-        kernel->addrLock->V();
-        return;
-    }
+    // if (numPages > kernel->gPhysPageBitMap->NumClear()) {
+    //     DEBUG(dbgAddr, "Not enough free space");
+    //     numPages = 0;
+    //     delete executable;
+    //     kernel->addrLock->V();
+    //     return;
+    // }
     DEBUG(dbgAddr, "Initializing address space: " << numPages << ", " << size);
     // first, set up the translation
     pageTable = new TranslationEntry[numPages];

@@ -236,6 +236,7 @@ int SysWrite(char* buffer, int charCount, int fileId) {
     
     // If it's a regular file:
     //return fd->file->Write(buffer, charCount);
+    return -1;
 }
 
 int SysSeek(int seekPos, int fileId) {

@@ -1,0 +1,2249 @@
+diff --git a/Lab3_Notes b/Lab3_Notes
+new file mode 100644
+index 0000000..d2e730a
+--- /dev/null
++++ b/Lab3_Notes
+@@ -0,0 +1,20 @@
++Implement a SLEEP SYS Call
++
++- Check the Alarm Function
++- Put processess to the Sleep List then go and trigger a function using Alarm Function every second, then this function shud go and
++check the sleep list and then check whether any processes has finished sleeping - time elapsed > sleep time - then release it from the list
++- modify the scheduler to ignore any program that is in the sleep list
++
++
++What I did:
++
++- The timer always called the Callback function in the alarm.h and alarm.cc files
++- Made a custom sorted list with custom compare function to handle sleeping threads
++- Sleeping thread is a new class that is created side by side alarm class
++- The WaitUntil function (that is declared inside alarm.h ) is now implemented in alarm.cc where the  waituntil function makes an entry in the sleepingthread sorted list using the amount ( ticks ) provided
++wakeuptime for the thread is set as currenttime + ticks ... then the Thread::Sleep function is called so the Thread now goes into Sleep Mode....
++- Now everytime the callback is called by the timer, we use the Alarm:Callback function  check whether the front queue ( least wakeuptime -> because its sorted like that ) has a wakeuptime that is les that current time
++then we move it to the ReadyToRun list in the sheduler
++- Hence the BLOCKED thread is now put into ready to run
++- Also implemented Thread:Sleep2 because sir told us to ...
++
+diff --git a/Lab4_Notes b/Lab4_Notes
+new file mode 100644
+index 0000000..083f974
+--- /dev/null
++++ b/Lab4_Notes
+@@ -0,0 +1,30 @@
++Initialize pipe syscall
++it will take two variables as input : x and y 
++it will assign file descriptors to both x and y 
++
++then x will write to a buffer and y will read through a buffer (will be shared) it will be called a pipe buffer
++so we will then have to implement a Write and Read syscall then - which will both read and write to buffers differently for pipe and normally otherwise
++after we do Exec after doing pipe, Exec will inherit both pointers
++
++
++parent will write using one of the fd and child will read using the other fd yeah?
++
++
++Main BluePrint:
++
++int fd[2];
++Pipe(fd);        // fd[0] = read end, fd[1] = write end
++// fd[0] and fd[1] are just integers (file descriptors)
++
++Exec(cmd1);      // child inherits both fd[0] and fd[1]
++// cmd1 writes to fd[1]
++// cmd2 reads from fd[0]
++
++
++What you need to implement:
++
++PipeBuffer struct in kernel
++A file descriptor table per process (array of pointers, some point to files, some to pipes)
++SC_Pipe syscall — allocates PipeBuffer, returns two fd's
++Modify SC_Read and SC_Write to check if fd is a pipe fd and route accordingly
++Inherit fd table on Exec
+\ No newline at end of file
+diff --git a/Lab5_Notes b/Lab5_Notes
+new file mode 100644
+index 0000000..c2eaa99
+--- /dev/null
++++ b/Lab5_Notes
+@@ -0,0 +1,17 @@
++Lab5 - Demand Paging:
++when there is a page fault - we do a page load from disk - that is called demand Paging
++page fault exception (already exists) - this is the function that is triggered when a page fault exception happens
++
++what we need to implement - 
++when a page fault occurs, what happens?
++
++for that we need to understand - 
++what is the process flow of nachos?
++nachos doesnt have heap btw
++understand data blocks of nachos... where is DS, Stack, Code Segment etc...
++
++
++moreover, the test program must have atleast two pages, 
++if its just one page then the exception never gets triggered, yeah?
++
++
+diff --git a/nachos-project/code/build.linux/Makefile b/nachos-project/code/build.linux/Makefile
+index 3def870..b9b4235 100644
+--- a/nachos-project/code/build.linux/Makefile
++++ b/nachos-project/code/build.linux/Makefile
+@@ -200,7 +200,7 @@ DEFINES =  -DFILESYS_STUB -DRDATA -DSIM_FIX
+ # break the thread system.  You might want to use -fno-inline if
+ # you need to call some inline functions from the debugger.
+ 
+-CFLAGS = -g -Wall $(INCPATH) $(DEFINES) $(HOSTCFLAGS) -DCHANGED -m32
++CFLAGS = -ggdb3 -Wall $(INCPATH) $(DEFINES) $(HOSTCFLAGS) -DCHANGED -m32
+ LDFLAGS = -m32
+ CPP_AS_FLAGS= -m32
+ 
+@@ -275,6 +275,7 @@ THREAD_H = ../threads/alarm.h\
+ 	../threads/pcb.h\
+ 	../threads/stable.h\
+ 	../threads/sem.h\
++	../threads/pipebuffer.h\
+ 
+ THREAD_C = ../threads/alarm.cc\
+ 	../threads/kernel.cc\
+@@ -287,8 +288,9 @@ THREAD_C = ../threads/alarm.cc\
+ 	../threads/pcb.cc\
+ 	../threads/stable.cc\
+ 	../threads/sem.cc\
++	../threads/pipebuffer.cc\
+ 
+-THREAD_O = alarm.o kernel.o main.o scheduler.o synch.o thread.o ptable.o pcb.o stable.o sem.o
++THREAD_O = alarm.o pipebuffer.o kernel.o main.o scheduler.o synch.o thread.o ptable.o pcb.o stable.o sem.o
+ 
+ USERPROG_H = ../userprog/addrspace.h\
+ 	../userprog/syscall.h\
+@@ -347,6 +349,9 @@ $(C_OFILES): %.o:
+ 
+ switch.o: ../threads/switch.S
+ 	$(CC) $(CPP_AS_FLAGS) -P $(INCPATH) $(HOSTCFLAGS) -c ../threads/switch.S
++	
++pipebuffer.o: ../threads/pipebuffer.cc $(THREAD_H)
++
+ 
+ depend: $(CFILES) $(HFILES)
+ 	$(CC) $(INCPATH) $(DEFINES) $(HOSTCFLAGS) -DCHANGED -M $(CFILES) > makedep
+diff --git a/nachos-project/code/build.linux/Makefile.dep b/nachos-project/code/build.linux/Makefile.dep
+index d7bc40f..7ef22b1 100644
+--- a/nachos-project/code/build.linux/Makefile.dep
++++ b/nachos-project/code/build.linux/Makefile.dep
+@@ -832,10 +832,10 @@ interrupt.o: ../machine/interrupt.cc /usr/include/stdc-predef.h \
+  ../machine/callback.h ../threads/main.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../machine/stats.h \
+- ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ stats.o: ../machine/stats.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/debug.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -1143,10 +1143,10 @@ timer.o: ../machine/timer.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
+  ../threads/alarm.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
+- ../threads/ptable.h ../threads/pcb.h
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ console.o: ../machine/console.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../machine/console.h ../lib/utility.h \
+  ../machine/callback.h ../threads/main.h ../lib/debug.h ../lib/sysdep.h \
+@@ -1302,11 +1302,11 @@ console.o: ../machine/console.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
+  ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ machine.o: ../machine/machine.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../machine/machine.h ../lib/utility.h \
+  ../machine/translate.h ../threads/main.h ../lib/debug.h ../lib/sysdep.h \
+@@ -1461,11 +1461,12 @@ machine.o: ../machine/machine.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/scheduler.h \
+- ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
+- ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
+- ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
+- ../threads/ptable.h ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
++ ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
++ ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
++ ../threads/pcb.h ../threads/pipebuffer.h
+ mipssim.o: ../machine/mipssim.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/debug.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -1621,11 +1622,11 @@ mipssim.o: ../machine/mipssim.cc /usr/include/stdc-predef.h \
+  ../machine/translate.h ../machine/mipssim.h ../threads/main.h \
+  ../threads/kernel.h ../threads/thread.h ../userprog/addrspace.h \
+  ../filesys/filesys.h ../filesys/openfile.h ../filesys/filetable.h \
+- ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
++ ../userprog/noff.h ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
+  ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
+  ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ translate.o: ../machine/translate.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/main.h ../lib/debug.h ../lib/utility.h \
+  ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -1781,11 +1782,11 @@ translate.o: ../machine/translate.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ network.o: ../machine/network.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../machine/network.h ../lib/utility.h \
+  ../machine/callback.h ../threads/main.h ../lib/debug.h ../lib/sysdep.h \
+@@ -1941,11 +1942,11 @@ network.o: ../machine/network.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
+  ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ disk.o: ../machine/disk.cc /usr/include/stdc-predef.h ../lib/copyright.h \
+  ../machine/disk.h ../lib/utility.h ../machine/callback.h ../lib/debug.h \
+  ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -2101,15 +2102,15 @@ disk.o: ../machine/disk.cc /usr/include/stdc-predef.h ../lib/copyright.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/main.h \
+  ../threads/kernel.h ../threads/thread.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/scheduler.h \
+- ../lib/list.h ../lib/list.cc ../machine/interrupt.h ../machine/stats.h \
+- ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
++ ../machine/interrupt.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ alarm.o: ../threads/alarm.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/alarm.h ../lib/utility.h \
+- ../machine/callback.h ../machine/timer.h ../threads/main.h \
+- ../lib/debug.h ../lib/sysdep.h /usr/include/c++/13/iostream \
++ ../machine/callback.h ../machine/timer.h ../lib/list.h ../lib/debug.h \
++ ../lib/sysdep.h /usr/include/c++/13/iostream \
+  /usr/include/c++/13/bits/requires_hosted.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
+@@ -2259,13 +2260,13 @@ alarm.o: ../threads/alarm.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/basic_ios.tcc \
+  /usr/include/c++/13/bits/ostream.tcc /usr/include/c++/13/istream \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+- /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
++ /usr/include/string.h /usr/include/strings.h ../lib/list.cc \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/stats.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/filetable.h ../userprog/noff.h ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/stats.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ kernel.o: ../threads/kernel.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/debug.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -2420,11 +2421,12 @@ kernel.o: ../threads/kernel.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/main.h \
+  ../threads/kernel.h ../threads/thread.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/scheduler.h \
+- ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
+- ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
+- ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
+- ../threads/ptable.h ../threads/pcb.h ../threads/synch.h \
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
++ ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
++ ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
++ ../threads/pcb.h ../threads/pipebuffer.h ../threads/synch.h \
+  ../threads/synchlist.h ../threads/synchlist.cc ../lib/libtest.h \
+  ../userprog/synchconsole.h ../machine/console.h ../filesys/synchdisk.h \
+  ../machine/disk.h ../network/post.h ../machine/network.h
+@@ -2582,11 +2584,11 @@ main.o: ../threads/main.cc /usr/include/stdc-predef.h ../lib/copyright.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ scheduler.o: ../threads/scheduler.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/debug.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -2741,11 +2743,11 @@ scheduler.o: ../threads/scheduler.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/scheduler.h \
+  ../lib/list.h ../lib/list.cc ../threads/thread.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/main.h \
+- ../threads/kernel.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/main.h ../threads/kernel.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ synch.o: ../threads/synch.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/synch.h ../threads/thread.h \
+  ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -2900,12 +2902,12 @@ synch.o: ../threads/synch.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ synchlist.o: ../threads/synchlist.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/synchlist.h ../lib/list.h ../lib/debug.h \
+  ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -3061,11 +3063,12 @@ synchlist.o: ../threads/synchlist.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../lib/list.cc \
+  ../threads/synch.h ../threads/thread.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/main.h \
+- ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
+- ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
+- ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
+- ../threads/ptable.h ../threads/pcb.h ../threads/synchlist.cc
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/main.h ../threads/kernel.h ../threads/scheduler.h \
++ ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
++ ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
++ ../threads/pcb.h ../threads/pipebuffer.h ../threads/synchlist.cc
+ thread.o: ../threads/thread.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/thread.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -3219,13 +3222,13 @@ thread.o: ../threads/thread.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/switch.h \
+- ../threads/synch.h ../lib/list.h ../lib/debug.h ../lib/list.cc \
+- ../threads/main.h ../threads/kernel.h ../threads/scheduler.h \
+- ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
+- ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/switch.h ../threads/synch.h ../lib/list.h ../lib/debug.h \
++ ../lib/list.cc ../threads/main.h ../threads/kernel.h \
++ ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
++ ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ ptable.o: ../threads/ptable.cc /usr/include/stdc-predef.h \
+  ../threads/synch.h ../lib/copyright.h ../threads/thread.h \
+  ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -3380,12 +3383,12 @@ ptable.o: ../threads/ptable.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ pcb.o: ../threads/pcb.cc /usr/include/stdc-predef.h ../threads/synch.h \
+  ../lib/copyright.h ../threads/thread.h ../lib/utility.h ../lib/sysdep.h \
+  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
+@@ -3539,12 +3542,12 @@ pcb.o: ../threads/pcb.cc /usr/include/stdc-predef.h ../threads/synch.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ stable.o: ../threads/stable.cc /usr/include/stdc-predef.h \
+  ../threads/synch.h ../lib/copyright.h ../threads/thread.h \
+  ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -3699,12 +3702,12 @@ stable.o: ../threads/stable.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ sem.o: ../threads/sem.cc /usr/include/stdc-predef.h ../threads/sem.h \
+  ../threads/synch.h ../lib/copyright.h ../threads/thread.h \
+  ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -3859,11 +3862,172 @@ sem.o: ../threads/sem.cc /usr/include/stdc-predef.h ../threads/sem.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/ptable.h ../threads/pcb.h
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
++pipebuffer.o: ../threads/pipebuffer.cc /usr/include/stdc-predef.h \
++ ../threads/synch.h ../lib/copyright.h ../threads/thread.h \
++ ../lib/utility.h ../lib/sysdep.h /usr/include/c++/13/iostream \
++ /usr/include/c++/13/bits/requires_hosted.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
++ /usr/include/features.h /usr/include/features-time64.h \
++ /usr/include/x86_64-linux-gnu/bits/wordsize.h \
++ /usr/include/x86_64-linux-gnu/bits/timesize.h \
++ /usr/include/x86_64-linux-gnu/sys/cdefs.h \
++ /usr/include/x86_64-linux-gnu/bits/long-double.h \
++ /usr/include/x86_64-linux-gnu/gnu/stubs.h \
++ /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h \
++ /usr/include/c++/13/pstl/pstl_config.h /usr/include/c++/13/ostream \
++ /usr/include/c++/13/ios /usr/include/c++/13/iosfwd \
++ /usr/include/c++/13/bits/stringfwd.h \
++ /usr/include/c++/13/bits/memoryfwd.h /usr/include/c++/13/bits/postypes.h \
++ /usr/include/c++/13/cwchar /usr/include/wchar.h \
++ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
++ /usr/include/x86_64-linux-gnu/bits/floatn.h \
++ /usr/include/x86_64-linux-gnu/bits/floatn-common.h \
++ /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h \
++ /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
++ /usr/include/x86_64-linux-gnu/bits/wchar.h \
++ /usr/include/x86_64-linux-gnu/bits/types/wint_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/__FILE.h \
++ /usr/include/x86_64-linux-gnu/bits/types/FILE.h \
++ /usr/include/x86_64-linux-gnu/bits/types/locale_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h \
++ /usr/include/c++/13/exception /usr/include/c++/13/bits/exception.h \
++ /usr/include/c++/13/bits/exception_ptr.h \
++ /usr/include/c++/13/bits/exception_defines.h \
++ /usr/include/c++/13/bits/cxxabi_init_exception.h \
++ /usr/include/c++/13/typeinfo /usr/include/c++/13/bits/hash_bytes.h \
++ /usr/include/c++/13/new /usr/include/c++/13/bits/move.h \
++ /usr/include/c++/13/type_traits \
++ /usr/include/c++/13/bits/nested_exception.h \
++ /usr/include/c++/13/bits/char_traits.h \
++ /usr/include/c++/13/bits/localefwd.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/c++locale.h \
++ /usr/include/c++/13/clocale /usr/include/locale.h \
++ /usr/include/x86_64-linux-gnu/bits/locale.h /usr/include/c++/13/cctype \
++ /usr/include/ctype.h /usr/include/x86_64-linux-gnu/bits/types.h \
++ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
++ /usr/include/x86_64-linux-gnu/bits/time64.h \
++ /usr/include/x86_64-linux-gnu/bits/endian.h \
++ /usr/include/x86_64-linux-gnu/bits/endianness.h \
++ /usr/include/c++/13/bits/ios_base.h /usr/include/c++/13/ext/atomicity.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h \
++ /usr/include/pthread.h /usr/include/sched.h \
++ /usr/include/x86_64-linux-gnu/bits/types/time_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h \
++ /usr/include/x86_64-linux-gnu/bits/sched.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h \
++ /usr/include/x86_64-linux-gnu/bits/cpu-set.h /usr/include/time.h \
++ /usr/include/x86_64-linux-gnu/bits/time.h \
++ /usr/include/x86_64-linux-gnu/bits/timex.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h \
++ /usr/include/x86_64-linux-gnu/bits/types/clock_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_tm.h \
++ /usr/include/x86_64-linux-gnu/bits/types/clockid_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/timer_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h \
++ /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h \
++ /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h \
++ /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h \
++ /usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h \
++ /usr/include/x86_64-linux-gnu/bits/struct_mutex.h \
++ /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h \
++ /usr/include/x86_64-linux-gnu/bits/setjmp.h \
++ /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h \
++ /usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h \
++ /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
++ /usr/include/c++/13/bits/locale_classes.h /usr/include/c++/13/string \
++ /usr/include/c++/13/bits/allocator.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h \
++ /usr/include/c++/13/bits/new_allocator.h \
++ /usr/include/c++/13/bits/functexcept.h \
++ /usr/include/c++/13/bits/cpp_type_traits.h \
++ /usr/include/c++/13/bits/ostream_insert.h \
++ /usr/include/c++/13/bits/cxxabi_forced.h \
++ /usr/include/c++/13/bits/stl_iterator_base_funcs.h \
++ /usr/include/c++/13/bits/concept_check.h \
++ /usr/include/c++/13/debug/assertions.h \
++ /usr/include/c++/13/bits/stl_iterator_base_types.h \
++ /usr/include/c++/13/bits/stl_iterator.h \
++ /usr/include/c++/13/ext/type_traits.h \
++ /usr/include/c++/13/bits/ptr_traits.h \
++ /usr/include/c++/13/bits/stl_function.h \
++ /usr/include/c++/13/backward/binders.h \
++ /usr/include/c++/13/ext/numeric_traits.h \
++ /usr/include/c++/13/bits/stl_algobase.h \
++ /usr/include/c++/13/bits/stl_pair.h /usr/include/c++/13/bits/utility.h \
++ /usr/include/c++/13/debug/debug.h \
++ /usr/include/c++/13/bits/predefined_ops.h /usr/include/c++/13/bit \
++ /usr/include/c++/13/bits/refwrap.h /usr/include/c++/13/bits/invoke.h \
++ /usr/include/c++/13/bits/range_access.h \
++ /usr/include/c++/13/initializer_list \
++ /usr/include/c++/13/bits/basic_string.h \
++ /usr/include/c++/13/ext/alloc_traits.h \
++ /usr/include/c++/13/bits/alloc_traits.h \
++ /usr/include/c++/13/bits/stl_construct.h /usr/include/c++/13/string_view \
++ /usr/include/c++/13/bits/functional_hash.h \
++ /usr/include/c++/13/bits/string_view.tcc \
++ /usr/include/c++/13/ext/string_conversions.h /usr/include/c++/13/cstdlib \
++ /usr/include/stdlib.h /usr/include/x86_64-linux-gnu/bits/waitflags.h \
++ /usr/include/x86_64-linux-gnu/bits/waitstatus.h \
++ /usr/include/x86_64-linux-gnu/sys/types.h \
++ /usr/include/x86_64-linux-gnu/bits/stdint-intn.h /usr/include/endian.h \
++ /usr/include/x86_64-linux-gnu/bits/byteswap.h \
++ /usr/include/x86_64-linux-gnu/bits/uintn-identity.h \
++ /usr/include/x86_64-linux-gnu/sys/select.h \
++ /usr/include/x86_64-linux-gnu/bits/select.h \
++ /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h \
++ /usr/include/alloca.h /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
++ /usr/include/c++/13/bits/std_abs.h /usr/include/c++/13/cstdio \
++ /usr/include/stdio.h /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h \
++ /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h \
++ /usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h \
++ /usr/include/x86_64-linux-gnu/bits/stdio_lim.h \
++ /usr/include/c++/13/cerrno /usr/include/errno.h \
++ /usr/include/x86_64-linux-gnu/bits/errno.h /usr/include/linux/errno.h \
++ /usr/include/x86_64-linux-gnu/asm/errno.h \
++ /usr/include/asm-generic/errno.h /usr/include/asm-generic/errno-base.h \
++ /usr/include/x86_64-linux-gnu/bits/types/error_t.h \
++ /usr/include/c++/13/bits/charconv.h \
++ /usr/include/c++/13/bits/basic_string.tcc \
++ /usr/include/c++/13/bits/memory_resource.h /usr/include/c++/13/cstddef \
++ /usr/include/c++/13/bits/uses_allocator.h \
++ /usr/include/c++/13/bits/uses_allocator_args.h /usr/include/c++/13/tuple \
++ /usr/include/c++/13/bits/locale_classes.tcc \
++ /usr/include/c++/13/system_error \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
++ /usr/include/c++/13/stdexcept /usr/include/c++/13/streambuf \
++ /usr/include/c++/13/bits/streambuf.tcc \
++ /usr/include/c++/13/bits/basic_ios.h \
++ /usr/include/c++/13/bits/locale_facets.h /usr/include/c++/13/cwctype \
++ /usr/include/wctype.h /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h \
++ /usr/include/c++/13/bits/streambuf_iterator.h \
++ /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h \
++ /usr/include/c++/13/bits/locale_facets.tcc \
++ /usr/include/c++/13/bits/basic_ios.tcc \
++ /usr/include/c++/13/bits/ostream.tcc /usr/include/c++/13/istream \
++ /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
++ /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
++ ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h
+ addrspace.o: ../userprog/addrspace.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/main.h ../lib/debug.h ../lib/utility.h \
+  ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -4019,11 +4183,12 @@ addrspace.o: ../userprog/addrspace.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h ../userprog/noff.h ../threads/synch.h
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h \
++ ../threads/synch.h
+ exception.o: ../userprog/exception.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../threads/main.h ../lib/debug.h ../lib/utility.h \
+  ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -4179,13 +4344,14 @@ exception.o: ../userprog/exception.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../threads/kernel.h \
+  ../threads/thread.h ../machine/machine.h ../machine/translate.h \
+  ../userprog/addrspace.h ../filesys/filesys.h ../filesys/openfile.h \
+- ../filesys/filetable.h ../threads/scheduler.h ../lib/list.h \
+- ../lib/list.cc ../machine/interrupt.h ../machine/callback.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h ../userprog/syscall.h ../userprog/errno.h \
+- ../userprog/ksyscall.h ../userprog/synchconsole.h ../machine/console.h \
+- ../threads/synch.h ../userprog/ksyscallhelper.h
++ ../filesys/filetable.h ../userprog/noff.h ../threads/scheduler.h \
++ ../lib/list.h ../lib/list.cc ../machine/interrupt.h \
++ ../machine/callback.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h \
++ ../userprog/syscall.h ../userprog/errno.h ../userprog/ksyscall.h \
++ ../userprog/synchconsole.h ../machine/console.h ../threads/synch.h \
++ ../userprog/ksyscallhelper.h
+ synchconsole.o: ../userprog/synchconsole.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../userprog/synchconsole.h ../lib/utility.h \
+  ../machine/callback.h ../machine/console.h ../threads/synch.h \
+@@ -4341,12 +4507,12 @@ synchconsole.o: ../userprog/synchconsole.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/stats.h \
+- ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ directory.o: ../filesys/directory.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/utility.h ../filesys/filehdr.h \
+  ../machine/disk.h ../machine/callback.h ../filesys/pbitmap.h \
+@@ -4657,11 +4823,12 @@ filehdr.o: ../filesys/filehdr.cc /usr/include/stdc-predef.h \
+  /usr/include/string.h /usr/include/strings.h ../lib/debug.h \
+  ../filesys/synchdisk.h ../threads/synch.h ../threads/thread.h \
+  ../machine/machine.h ../machine/translate.h ../userprog/addrspace.h \
+- ../filesys/filesys.h ../filesys/filetable.h ../lib/list.h ../lib/list.cc \
+- ../threads/main.h ../threads/kernel.h ../threads/scheduler.h \
+- ../machine/interrupt.h ../machine/stats.h ../threads/alarm.h \
+- ../machine/timer.h ../threads/stable.h ../threads/sem.h \
+- ../threads/ptable.h ../threads/pcb.h
++ ../filesys/filesys.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
++ ../threads/scheduler.h ../machine/interrupt.h ../machine/stats.h \
++ ../threads/alarm.h ../machine/timer.h ../threads/stable.h \
++ ../threads/sem.h ../threads/ptable.h ../threads/pcb.h \
++ ../threads/pipebuffer.h
+ filesys.o: ../filesys/filesys.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+  /usr/include/c++/13/bits/requires_hosted.h \
+@@ -4817,11 +4984,11 @@ filesys.o: ../filesys/filesys.cc /usr/include/stdc-predef.h \
+  ../lib/utility.h ../filesys/filetable.h ../filesys/filesys.h \
+  ../threads/kernel.h ../lib/debug.h ../threads/thread.h \
+  ../machine/machine.h ../machine/translate.h ../userprog/addrspace.h \
+- ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
++ ../userprog/noff.h ../threads/scheduler.h ../lib/list.h ../lib/list.cc \
+  ../machine/interrupt.h ../machine/callback.h ../machine/stats.h \
+  ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h ../threads/main.h
++ ../threads/pcb.h ../threads/pipebuffer.h ../threads/main.h
+ pbitmap.o: ../filesys/pbitmap.cc /usr/include/stdc-predef.h \
+  ../lib/copyright.h ../filesys/pbitmap.h ../lib/bitmap.h ../lib/utility.h \
+  ../filesys/openfile.h ../lib/sysdep.h /usr/include/c++/13/iostream \
+@@ -5131,12 +5298,12 @@ synchdisk.o: ../filesys/synchdisk.cc /usr/include/stdc-predef.h \
+  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/stdlib.h \
+  /usr/include/string.h /usr/include/strings.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../lib/list.h \
+- ../lib/debug.h ../lib/list.cc ../threads/main.h ../threads/kernel.h \
+- ../threads/scheduler.h ../machine/interrupt.h ../machine/stats.h \
+- ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../lib/list.h ../lib/debug.h ../lib/list.cc ../threads/main.h \
++ ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
++ ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+  ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h
++ ../threads/pcb.h ../threads/pipebuffer.h
+ post.o: ../network/post.cc /usr/include/stdc-predef.h ../lib/copyright.h \
+  ../network/post.h ../lib/utility.h ../machine/callback.h \
+  ../machine/network.h ../threads/synchlist.h ../lib/list.h ../lib/debug.h \
+@@ -5293,11 +5460,12 @@ post.o: ../network/post.cc /usr/include/stdc-predef.h ../lib/copyright.h \
+  /usr/include/string.h /usr/include/strings.h ../lib/list.cc \
+  ../threads/synch.h ../threads/thread.h ../machine/machine.h \
+  ../machine/translate.h ../userprog/addrspace.h ../filesys/filesys.h \
+- ../filesys/openfile.h ../filesys/filetable.h ../threads/main.h \
+- ../threads/kernel.h ../threads/scheduler.h ../machine/interrupt.h \
+- ../machine/stats.h ../threads/alarm.h ../machine/timer.h ../lib/bitmap.h \
+- ../threads/stable.h ../threads/sem.h ../threads/ptable.h \
+- ../threads/pcb.h ../threads/synchlist.cc
++ ../filesys/openfile.h ../filesys/filetable.h ../userprog/noff.h \
++ ../threads/main.h ../threads/kernel.h ../threads/scheduler.h \
++ ../machine/interrupt.h ../machine/stats.h ../threads/alarm.h \
++ ../machine/timer.h ../lib/bitmap.h ../threads/stable.h ../threads/sem.h \
++ ../threads/ptable.h ../threads/pcb.h ../threads/pipebuffer.h \
++ ../threads/synchlist.cc
+ # DEPENDENCIES MUST END AT END OF FILE
+ # IF YOU PUT STUFF HERE IT WILL GO AWAY
+ # see make depend above
+diff --git a/nachos-project/code/build.linux/addrspace.o b/nachos-project/code/build.linux/addrspace.o
+index dd95315..2997518 100644
+Binary files a/nachos-project/code/build.linux/addrspace.o and b/nachos-project/code/build.linux/addrspace.o differ
+diff --git a/nachos-project/code/build.linux/alarm.o b/nachos-project/code/build.linux/alarm.o
+index 929db78..8e87b7c 100644
+Binary files a/nachos-project/code/build.linux/alarm.o and b/nachos-project/code/build.linux/alarm.o differ
+diff --git a/nachos-project/code/build.linux/bitmap.o b/nachos-project/code/build.linux/bitmap.o
+index d016b45..703dc80 100644
+Binary files a/nachos-project/code/build.linux/bitmap.o and b/nachos-project/code/build.linux/bitmap.o differ
+diff --git a/nachos-project/code/build.linux/console.o b/nachos-project/code/build.linux/console.o
+index 5b9737c..73ef438 100644
+Binary files a/nachos-project/code/build.linux/console.o and b/nachos-project/code/build.linux/console.o differ
+diff --git a/nachos-project/code/build.linux/debug.o b/nachos-project/code/build.linux/debug.o
+index 7f18b56..8ed83c1 100644
+Binary files a/nachos-project/code/build.linux/debug.o and b/nachos-project/code/build.linux/debug.o differ
+diff --git a/nachos-project/code/build.linux/directory.o b/nachos-project/code/build.linux/directory.o
+index e38cfc1..4228526 100644
+Binary files a/nachos-project/code/build.linux/directory.o and b/nachos-project/code/build.linux/directory.o differ
+diff --git a/nachos-project/code/build.linux/disk.o b/nachos-project/code/build.linux/disk.o
+index 93dcd77..30fe39c 100644
+Binary files a/nachos-project/code/build.linux/disk.o and b/nachos-project/code/build.linux/disk.o differ
+diff --git a/nachos-project/code/build.linux/exception.o b/nachos-project/code/build.linux/exception.o
+index 5212865..552e4a0 100644
+Binary files a/nachos-project/code/build.linux/exception.o and b/nachos-project/code/build.linux/exception.o differ
+diff --git a/nachos-project/code/build.linux/filehdr.o b/nachos-project/code/build.linux/filehdr.o
+index 3d0ece3..b098f30 100644
+Binary files a/nachos-project/code/build.linux/filehdr.o and b/nachos-project/code/build.linux/filehdr.o differ
+diff --git a/nachos-project/code/build.linux/filesys.o b/nachos-project/code/build.linux/filesys.o
+index 59ebf5c..538f64f 100644
+Binary files a/nachos-project/code/build.linux/filesys.o and b/nachos-project/code/build.linux/filesys.o differ
+diff --git a/nachos-project/code/build.linux/interrupt.o b/nachos-project/code/build.linux/interrupt.o
+index 1448ee6..b245753 100644
+Binary files a/nachos-project/code/build.linux/interrupt.o and b/nachos-project/code/build.linux/interrupt.o differ
+diff --git a/nachos-project/code/build.linux/kernel.o b/nachos-project/code/build.linux/kernel.o
+index 83dc30e..466f59f 100644
+Binary files a/nachos-project/code/build.linux/kernel.o and b/nachos-project/code/build.linux/kernel.o differ
+diff --git a/nachos-project/code/build.linux/libtest.o b/nachos-project/code/build.linux/libtest.o
+index c3f8df6..40de025 100644
+Binary files a/nachos-project/code/build.linux/libtest.o and b/nachos-project/code/build.linux/libtest.o differ
+diff --git a/nachos-project/code/build.linux/machine.o b/nachos-project/code/build.linux/machine.o
+index dbd9da6..7205eb3 100644
+Binary files a/nachos-project/code/build.linux/machine.o and b/nachos-project/code/build.linux/machine.o differ
+diff --git a/nachos-project/code/build.linux/main.o b/nachos-project/code/build.linux/main.o
+index c5ec574..8fabff2 100644
+Binary files a/nachos-project/code/build.linux/main.o and b/nachos-project/code/build.linux/main.o differ
+diff --git a/nachos-project/code/build.linux/mipssim.o b/nachos-project/code/build.linux/mipssim.o
+index f968aa9..a8f79d0 100644
+Binary files a/nachos-project/code/build.linux/mipssim.o and b/nachos-project/code/build.linux/mipssim.o differ
+diff --git a/nachos-project/code/build.linux/nachos b/nachos-project/code/build.linux/nachos
+index 3a8c754..f3a4144 100755
+Binary files a/nachos-project/code/build.linux/nachos and b/nachos-project/code/build.linux/nachos differ
+diff --git a/nachos-project/code/build.linux/network.o b/nachos-project/code/build.linux/network.o
+index ef59dfc..6a464cb 100644
+Binary files a/nachos-project/code/build.linux/network.o and b/nachos-project/code/build.linux/network.o differ
+diff --git a/nachos-project/code/build.linux/openfile.o b/nachos-project/code/build.linux/openfile.o
+index 69a641f..902ebd9 100644
+Binary files a/nachos-project/code/build.linux/openfile.o and b/nachos-project/code/build.linux/openfile.o differ
+diff --git a/nachos-project/code/build.linux/pbitmap.o b/nachos-project/code/build.linux/pbitmap.o
+index 12ee940..f75e872 100644
+Binary files a/nachos-project/code/build.linux/pbitmap.o and b/nachos-project/code/build.linux/pbitmap.o differ
+diff --git a/nachos-project/code/build.linux/pcb.o b/nachos-project/code/build.linux/pcb.o
+index 7590874..e0aefdf 100644
+Binary files a/nachos-project/code/build.linux/pcb.o and b/nachos-project/code/build.linux/pcb.o differ
+diff --git a/nachos-project/code/build.linux/pipebuffer.o b/nachos-project/code/build.linux/pipebuffer.o
+new file mode 100644
+index 0000000..aec721e
+Binary files /dev/null and b/nachos-project/code/build.linux/pipebuffer.o differ
+diff --git a/nachos-project/code/build.linux/post.o b/nachos-project/code/build.linux/post.o
+index a5ff54f..0723483 100644
+Binary files a/nachos-project/code/build.linux/post.o and b/nachos-project/code/build.linux/post.o differ
+diff --git a/nachos-project/code/build.linux/ptable.o b/nachos-project/code/build.linux/ptable.o
+index 96a4e91..5f0ed06 100644
+Binary files a/nachos-project/code/build.linux/ptable.o and b/nachos-project/code/build.linux/ptable.o differ
+diff --git a/nachos-project/code/build.linux/scheduler.o b/nachos-project/code/build.linux/scheduler.o
+index 909e7d0..7da1f28 100644
+Binary files a/nachos-project/code/build.linux/scheduler.o and b/nachos-project/code/build.linux/scheduler.o differ
+diff --git a/nachos-project/code/build.linux/sem.o b/nachos-project/code/build.linux/sem.o
+index 158f344..5d8ae70 100644
+Binary files a/nachos-project/code/build.linux/sem.o and b/nachos-project/code/build.linux/sem.o differ
+diff --git a/nachos-project/code/build.linux/stable.o b/nachos-project/code/build.linux/stable.o
+index a96737d..f9d98af 100644
+Binary files a/nachos-project/code/build.linux/stable.o and b/nachos-project/code/build.linux/stable.o differ
+diff --git a/nachos-project/code/build.linux/stats.o b/nachos-project/code/build.linux/stats.o
+index 3d88998..2a54424 100644
+Binary files a/nachos-project/code/build.linux/stats.o and b/nachos-project/code/build.linux/stats.o differ
+diff --git a/nachos-project/code/build.linux/synch.o b/nachos-project/code/build.linux/synch.o
+index 38415f1..ec8996a 100644
+Binary files a/nachos-project/code/build.linux/synch.o and b/nachos-project/code/build.linux/synch.o differ
+diff --git a/nachos-project/code/build.linux/synchconsole.o b/nachos-project/code/build.linux/synchconsole.o
+index 4c5992b..bb6b6e0 100644
+Binary files a/nachos-project/code/build.linux/synchconsole.o and b/nachos-project/code/build.linux/synchconsole.o differ
+diff --git a/nachos-project/code/build.linux/synchdisk.o b/nachos-project/code/build.linux/synchdisk.o
+index 2b4926f..342cb95 100644
+Binary files a/nachos-project/code/build.linux/synchdisk.o and b/nachos-project/code/build.linux/synchdisk.o differ
+diff --git a/nachos-project/code/build.linux/sysdep.o b/nachos-project/code/build.linux/sysdep.o
+index 3f98193..837e7b3 100644
+Binary files a/nachos-project/code/build.linux/sysdep.o and b/nachos-project/code/build.linux/sysdep.o differ
+diff --git a/nachos-project/code/build.linux/thread.o b/nachos-project/code/build.linux/thread.o
+index cc8795a..2d87aca 100644
+Binary files a/nachos-project/code/build.linux/thread.o and b/nachos-project/code/build.linux/thread.o differ
+diff --git a/nachos-project/code/build.linux/timer.o b/nachos-project/code/build.linux/timer.o
+index f456413..0811cb5 100644
+Binary files a/nachos-project/code/build.linux/timer.o and b/nachos-project/code/build.linux/timer.o differ
+diff --git a/nachos-project/code/build.linux/translate.o b/nachos-project/code/build.linux/translate.o
+index 9851ed5..ecbbcce 100644
+Binary files a/nachos-project/code/build.linux/translate.o and b/nachos-project/code/build.linux/translate.o differ
+diff --git a/nachos-project/code/machine/interrupt.cc b/nachos-project/code/machine/interrupt.cc
+index 4ed8291..c196a39 100644
+--- a/nachos-project/code/machine/interrupt.cc
++++ b/nachos-project/code/machine/interrupt.cc
+@@ -26,8 +26,8 @@
+ 
+ // String definitions for debugging messages
+ 
+-static char *intLevelNames[] = {"off", "on"};
+-static char *intTypeNames[] = {"timer",        "disk",         "console write",
++static const char *intLevelNames[] = {"off", "on"};
++static const char *intTypeNames[] = {"timer",        "disk",         "console write",
+                                "console read", "network send", "network recv"};
+ 
+ //----------------------------------------------------------------------
+diff --git a/nachos-project/code/test/Makefile b/nachos-project/code/test/Makefile
+index cde7a14..50f4ade 100644
+--- a/nachos-project/code/test/Makefile
++++ b/nachos-project/code/test/Makefile
+@@ -112,7 +112,7 @@ ifeq ($(hosttype),unknown)
+ PROGRAMS = unknownhost
+ else
+ # change this if you create a new test program!
+-PROGRAMS = abs add halt shell matmult sort segments test_syscall num_io char_io random str_io ascii bubblesort help create_file open_file readwrite exec test_sem sinhvien voinuoc main
++PROGRAMS = high low test_scheduler sleeptest pipe abs add halt shell matmult sort segments test_syscall num_io char_io random str_io ascii bubblesort help create_file open_file readwrite exec test_sem sinhvien voinuoc main
+ endif
+ 
+ all: $(PROGRAMS)
+@@ -126,6 +126,31 @@ halt: halt.o start.o
+ 	$(LD) $(LDFLAGS) start.o halt.o -o halt.coff
+ 	$(COFF2NOFF) halt.coff halt
+ 
++sleeptest.o: sleeptest.c
++	$(CC) $(CFLAGS) -c sleeptest.c
++sleeptest: sleeptest.o start.o
++	$(LD) $(LDFLAGS) start.o sleeptest.o -o sleeptest.coff
++	$(COFF2NOFF) sleeptest.coff sleeptest
++
++# scheduler scripts high low and test_scheduler
++high.o: high.c
++	$(CC) $(CFLAGS) -c high.c
++high: high.o start.o
++	$(LD) $(LDFLAGS) start.o high.o -o high.coff
++	$(COFF2NOFF) high.coff high
++
++low.o: low.c
++	$(CC) $(CFLAGS) -c low.c
++low: low.o start.o
++	$(LD) $(LDFLAGS) start.o low.o -o low.coff
++	$(COFF2NOFF) low.coff low
++
++
++test_scheduler.o: test_scheduler.c
++	$(CC) $(CFLAGS) -c test_scheduler.c
++test_scheduler: test_scheduler.o start.o
++	$(LD) $(LDFLAGS) start.o test_scheduler.o -o test_scheduler.coff
++	$(COFF2NOFF) test_scheduler.coff test_scheduler
+ 
+ abs.o: abs.c
+ 	$(CC) $(CFLAGS) -c abs.c
+@@ -139,6 +164,12 @@ add: add.o start.o
+ 	$(LD) $(LDFLAGS) start.o add.o -o add.coff
+ 	$(COFF2NOFF) add.coff add
+ 
++pipe.o: pipe.c
++	$(CC) $(CFLAGS) -c pipe.c
++pipe: pipe.o start.o
++	$(LD) $(LDFLAGS) start.o pipe.o -o pipe.coff
++	$(COFF2NOFF) pipe.coff pipe
++
+ shell.o: shell.c
+ 	$(CC) $(CFLAGS) -c shell.c
+ shell: shell.o start.o
+diff --git a/nachos-project/code/test/abs b/nachos-project/code/test/abs
+index dc67d02..ac79d01 100644
+Binary files a/nachos-project/code/test/abs and b/nachos-project/code/test/abs differ
+diff --git a/nachos-project/code/test/abs.c b/nachos-project/code/test/abs.c
+index a3c519b..7bc5b74 100644
+--- a/nachos-project/code/test/abs.c
++++ b/nachos-project/code/test/abs.c
+@@ -4,7 +4,9 @@ int main() {
+     int result;
+ 
+     result = Abs(-65);
+-
++    PrintString("Printing the absolute value of -65: ");
++    PrintNum(result);
++    PrintString("\n");
+     Halt();
+     /* not reached */
+ }
+diff --git a/nachos-project/code/test/abs.coff b/nachos-project/code/test/abs.coff
+index 0e98e5d..5121a2d 100755
+Binary files a/nachos-project/code/test/abs.coff and b/nachos-project/code/test/abs.coff differ
+diff --git a/nachos-project/code/test/abs.o b/nachos-project/code/test/abs.o
+index 3419dbe..26a1dce 100644
+Binary files a/nachos-project/code/test/abs.o and b/nachos-project/code/test/abs.o differ
+diff --git a/nachos-project/code/test/add b/nachos-project/code/test/add
+index 536929c..25460ab 100644
+Binary files a/nachos-project/code/test/add and b/nachos-project/code/test/add differ
+diff --git a/nachos-project/code/test/add.c b/nachos-project/code/test/add.c
+index 70b6925..1ed676e 100644
+--- a/nachos-project/code/test/add.c
++++ b/nachos-project/code/test/add.c
+@@ -11,7 +11,8 @@ int main() {
+     int result;
+ 
+     result = Add(42, 23);
+-
+-    Halt();
++    PrintString("Done adding :)) \n");
++    PrintNum(result);
++    PrintString("\n");
+     /* not reached */
+ }
+diff --git a/nachos-project/code/test/add.coff b/nachos-project/code/test/add.coff
+index 672f632..ec96234 100755
+Binary files a/nachos-project/code/test/add.coff and b/nachos-project/code/test/add.coff differ
+diff --git a/nachos-project/code/test/add.o b/nachos-project/code/test/add.o
+index d454026..03d1f4a 100644
+Binary files a/nachos-project/code/test/add.o and b/nachos-project/code/test/add.o differ
+diff --git a/nachos-project/code/test/ascii b/nachos-project/code/test/ascii
+index 5d23870..3bf8bd2 100644
+Binary files a/nachos-project/code/test/ascii and b/nachos-project/code/test/ascii differ
+diff --git a/nachos-project/code/test/ascii.coff b/nachos-project/code/test/ascii.coff
+index ce3db09..03bf377 100755
+Binary files a/nachos-project/code/test/ascii.coff and b/nachos-project/code/test/ascii.coff differ
+diff --git a/nachos-project/code/test/bubblesort b/nachos-project/code/test/bubblesort
+index c235242..132835e 100644
+Binary files a/nachos-project/code/test/bubblesort and b/nachos-project/code/test/bubblesort differ
+diff --git a/nachos-project/code/test/bubblesort.coff b/nachos-project/code/test/bubblesort.coff
+index f7b2041..bca9bbd 100755
+Binary files a/nachos-project/code/test/bubblesort.coff and b/nachos-project/code/test/bubblesort.coff differ
+diff --git a/nachos-project/code/test/char_io b/nachos-project/code/test/char_io
+index d50d408..88d57e2 100644
+Binary files a/nachos-project/code/test/char_io and b/nachos-project/code/test/char_io differ
+diff --git a/nachos-project/code/test/char_io.coff b/nachos-project/code/test/char_io.coff
+index 804247c..d446b70 100755
+Binary files a/nachos-project/code/test/char_io.coff and b/nachos-project/code/test/char_io.coff differ
+diff --git a/nachos-project/code/test/create_file b/nachos-project/code/test/create_file
+index f546d1e..5612261 100644
+Binary files a/nachos-project/code/test/create_file and b/nachos-project/code/test/create_file differ
+diff --git a/nachos-project/code/test/create_file.coff b/nachos-project/code/test/create_file.coff
+index fb6beed..50964a6 100755
+Binary files a/nachos-project/code/test/create_file.coff and b/nachos-project/code/test/create_file.coff differ
+diff --git a/nachos-project/code/test/exec b/nachos-project/code/test/exec
+index 6de246c..0dd778f 100644
+Binary files a/nachos-project/code/test/exec and b/nachos-project/code/test/exec differ
+diff --git a/nachos-project/code/test/exec.c b/nachos-project/code/test/exec.c
+index feadac1..63001c7 100644
+--- a/nachos-project/code/test/exec.c
++++ b/nachos-project/code/test/exec.c
+@@ -12,6 +12,21 @@ int main() {
+     if (pid < 0) {
+         Write("Exec failed: ", 14, stdout);
+         PrintNum(pid);
+-    } else
++    } else if (pid>0) {
++        int i;
++        for(i = 0; i<10000; i++){
++            int j;
++            for(j = 0; j<200000; j++);
++            PrintString("I Am Parent!\n");
++        }
++    } else if (pid == 0){
++        int k;
++        for(k = 0; k<10000; k++){
++            int m;
++            for(m= 0; m<200000; m++);
++            PrintString("I Am Child!\n");
++        }
++    } else {
+         Join(pid);
++    }
+ }
+diff --git a/nachos-project/code/test/exec.coff b/nachos-project/code/test/exec.coff
+index e8c0938..1c52111 100755
+Binary files a/nachos-project/code/test/exec.coff and b/nachos-project/code/test/exec.coff differ
+diff --git a/nachos-project/code/test/exec.o b/nachos-project/code/test/exec.o
+index 5f450be..3e7ef2f 100644
+Binary files a/nachos-project/code/test/exec.o and b/nachos-project/code/test/exec.o differ
+diff --git a/nachos-project/code/test/halt b/nachos-project/code/test/halt
+index 49c5d8a..cd644b0 100644
+Binary files a/nachos-project/code/test/halt and b/nachos-project/code/test/halt differ
+diff --git a/nachos-project/code/test/halt.coff b/nachos-project/code/test/halt.coff
+index 4610243..5a5a059 100755
+Binary files a/nachos-project/code/test/halt.coff and b/nachos-project/code/test/halt.coff differ
+diff --git a/nachos-project/code/test/help b/nachos-project/code/test/help
+index 906a351..db35daa 100644
+Binary files a/nachos-project/code/test/help and b/nachos-project/code/test/help differ
+diff --git a/nachos-project/code/test/help.c b/nachos-project/code/test/help.c
+index ef06497..6816d0f 100644
+--- a/nachos-project/code/test/help.c
++++ b/nachos-project/code/test/help.c
+@@ -1,7 +1,7 @@
+ #include "syscall.h"
+ 
+ int main() {
+-    PrintString("Our team:\n");
++    PrintString("Hello Test\n");
+     PrintString("19120037 Le Duy Thuc\n");
+     PrintString("19120395 Tran Duy Tien\n");
+     PrintString("19120219 Ha Chi Hao\n\n");
+diff --git a/nachos-project/code/test/help.coff b/nachos-project/code/test/help.coff
+index 9eb242b..ffa4ad8 100755
+Binary files a/nachos-project/code/test/help.coff and b/nachos-project/code/test/help.coff differ
+diff --git a/nachos-project/code/test/help.o b/nachos-project/code/test/help.o
+index 535aff5..c58974b 100644
+Binary files a/nachos-project/code/test/help.o and b/nachos-project/code/test/help.o differ
+diff --git a/nachos-project/code/test/high b/nachos-project/code/test/high
+new file mode 100644
+index 0000000..c4f9381
+Binary files /dev/null and b/nachos-project/code/test/high differ
+diff --git a/nachos-project/code/test/high.c b/nachos-project/code/test/high.c
+new file mode 100644
+index 0000000..fd53137
+--- /dev/null
++++ b/nachos-project/code/test/high.c
+@@ -0,0 +1,13 @@
++#include "syscall.h"
++
++int main() {
++    int i;
++    SetPriority(90);
++    for (i = 0; i < 5; i++) {
++        PrintString("High Priority (90) loop: ");
++        PrintNum(i);
++        PrintString("\n");
++    }
++
++    Exit(0);
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/test/high.coff b/nachos-project/code/test/high.coff
+new file mode 100755
+index 0000000..a73239b
+Binary files /dev/null and b/nachos-project/code/test/high.coff differ
+diff --git a/nachos-project/code/test/high.o b/nachos-project/code/test/high.o
+new file mode 100644
+index 0000000..86cafda
+Binary files /dev/null and b/nachos-project/code/test/high.o differ
+diff --git a/nachos-project/code/test/low b/nachos-project/code/test/low
+new file mode 100644
+index 0000000..0f9ea27
+Binary files /dev/null and b/nachos-project/code/test/low differ
+diff --git a/nachos-project/code/test/low.c b/nachos-project/code/test/low.c
+new file mode 100644
+index 0000000..856f4f5
+--- /dev/null
++++ b/nachos-project/code/test/low.c
+@@ -0,0 +1,14 @@
++#include "syscall.h"
++
++int main() {
++    int i;
++    SetPriority(10); 
++
++    for (i = 0; i < 5; i++) {
++        PrintString("Low Priority (10) loop: ");
++        PrintNum(i);
++        PrintString("\n");
++    }
++
++    Exit(0);
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/test/low.coff b/nachos-project/code/test/low.coff
+new file mode 100755
+index 0000000..8d74459
+Binary files /dev/null and b/nachos-project/code/test/low.coff differ
+diff --git a/nachos-project/code/test/low.o b/nachos-project/code/test/low.o
+new file mode 100644
+index 0000000..ad51d98
+Binary files /dev/null and b/nachos-project/code/test/low.o differ
+diff --git a/nachos-project/code/test/main b/nachos-project/code/test/main
+index a40109d..aa2bf62 100644
+Binary files a/nachos-project/code/test/main and b/nachos-project/code/test/main differ
+diff --git a/nachos-project/code/test/main.coff b/nachos-project/code/test/main.coff
+index e652520..61c5dca 100755
+Binary files a/nachos-project/code/test/main.coff and b/nachos-project/code/test/main.coff differ
+diff --git a/nachos-project/code/test/matmult b/nachos-project/code/test/matmult
+index 266cdf5..260553d 100644
+Binary files a/nachos-project/code/test/matmult and b/nachos-project/code/test/matmult differ
+diff --git a/nachos-project/code/test/matmult.coff b/nachos-project/code/test/matmult.coff
+index ebd4c88..32170bf 100755
+Binary files a/nachos-project/code/test/matmult.coff and b/nachos-project/code/test/matmult.coff differ
+diff --git a/nachos-project/code/test/num_io b/nachos-project/code/test/num_io
+index 98172b0..700779b 100644
+Binary files a/nachos-project/code/test/num_io and b/nachos-project/code/test/num_io differ
+diff --git a/nachos-project/code/test/num_io.coff b/nachos-project/code/test/num_io.coff
+index 4259ee5..29b278d 100755
+Binary files a/nachos-project/code/test/num_io.coff and b/nachos-project/code/test/num_io.coff differ
+diff --git a/nachos-project/code/test/open_file b/nachos-project/code/test/open_file
+index b5d0370..458b46c 100644
+Binary files a/nachos-project/code/test/open_file and b/nachos-project/code/test/open_file differ
+diff --git a/nachos-project/code/test/open_file.coff b/nachos-project/code/test/open_file.coff
+index 7de9fd1..894ab17 100755
+Binary files a/nachos-project/code/test/open_file.coff and b/nachos-project/code/test/open_file.coff differ
+diff --git a/nachos-project/code/test/pipe b/nachos-project/code/test/pipe
+new file mode 100644
+index 0000000..fa4ad1a
+Binary files /dev/null and b/nachos-project/code/test/pipe differ
+diff --git a/nachos-project/code/test/pipe.c b/nachos-project/code/test/pipe.c
+new file mode 100644
+index 0000000..4f67292
+--- /dev/null
++++ b/nachos-project/code/test/pipe.c
+@@ -0,0 +1,36 @@
++#include "syscall.h"
++
++int main() {
++    int fd[2];
++    char buffer[20];
++    int pid;
++    int bytes;
++
++    if(Pipe(fd) < 0) {
++        PrintString("Pipe creation failed!\n");
++        Halt();
++    }
++    PrintString("Forkinggggg...\n");
++    pid = Exec("../test/pipe");
++
++    if(pid > 0){
++        // parent
++        PrintString("Parent: sending msg to child...\n");
++        Write("Hello Child!", 13, fd[1]);
++
++        Join(pid);
++        PrintString("Parent: child finished. LESGOOO!\n");
++        Halt();
++    } else {
++        // child
++        PrintString("Child: Waiting to read from pipe...\n");
++        bytes = Read(buffer, 13, fd[0]);
++
++        if (bytes > 0) {
++            PrintString("Child Received: ");
++            PrintString(buffer);
++            PrintString("\n");
++        }
++        Halt();
++    }
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/test/pipe.coff b/nachos-project/code/test/pipe.coff
+new file mode 100755
+index 0000000..32f8f80
+Binary files /dev/null and b/nachos-project/code/test/pipe.coff differ
+diff --git a/nachos-project/code/test/pipe.o b/nachos-project/code/test/pipe.o
+new file mode 100644
+index 0000000..98678d4
+Binary files /dev/null and b/nachos-project/code/test/pipe.o differ
+diff --git a/nachos-project/code/test/random b/nachos-project/code/test/random
+index 3a1cbc8..d71c5cc 100644
+Binary files a/nachos-project/code/test/random and b/nachos-project/code/test/random differ
+diff --git a/nachos-project/code/test/random.coff b/nachos-project/code/test/random.coff
+index 21eec8b..19304b0 100755
+Binary files a/nachos-project/code/test/random.coff and b/nachos-project/code/test/random.coff differ
+diff --git a/nachos-project/code/test/readwrite b/nachos-project/code/test/readwrite
+index d4f89ee..54f2ab5 100644
+Binary files a/nachos-project/code/test/readwrite and b/nachos-project/code/test/readwrite differ
+diff --git a/nachos-project/code/test/readwrite.coff b/nachos-project/code/test/readwrite.coff
+index b813ff5..7126c76 100755
+Binary files a/nachos-project/code/test/readwrite.coff and b/nachos-project/code/test/readwrite.coff differ
+diff --git a/nachos-project/code/test/segments b/nachos-project/code/test/segments
+index 34afefd..8be7a67 100644
+Binary files a/nachos-project/code/test/segments and b/nachos-project/code/test/segments differ
+diff --git a/nachos-project/code/test/segments.coff b/nachos-project/code/test/segments.coff
+index 34c9ab3..1348026 100755
+Binary files a/nachos-project/code/test/segments.coff and b/nachos-project/code/test/segments.coff differ
+diff --git a/nachos-project/code/test/shell b/nachos-project/code/test/shell
+index fc05218..a342843 100644
+Binary files a/nachos-project/code/test/shell and b/nachos-project/code/test/shell differ
+diff --git a/nachos-project/code/test/shell.coff b/nachos-project/code/test/shell.coff
+index fd68a79..832823e 100755
+Binary files a/nachos-project/code/test/shell.coff and b/nachos-project/code/test/shell.coff differ
+diff --git a/nachos-project/code/test/sinhvien b/nachos-project/code/test/sinhvien
+index 19fa9e4..06a4af9 100644
+Binary files a/nachos-project/code/test/sinhvien and b/nachos-project/code/test/sinhvien differ
+diff --git a/nachos-project/code/test/sinhvien.coff b/nachos-project/code/test/sinhvien.coff
+index 423865c..8977c5d 100755
+Binary files a/nachos-project/code/test/sinhvien.coff and b/nachos-project/code/test/sinhvien.coff differ
+diff --git a/nachos-project/code/test/sleeptest b/nachos-project/code/test/sleeptest
+new file mode 100644
+index 0000000..50f7c38
+Binary files /dev/null and b/nachos-project/code/test/sleeptest differ
+diff --git a/nachos-project/code/test/sleeptest.c b/nachos-project/code/test/sleeptest.c
+new file mode 100644
+index 0000000..a2ffb81
+--- /dev/null
++++ b/nachos-project/code/test/sleeptest.c
+@@ -0,0 +1,18 @@
++#include "syscall.h"
++
++int main() {
++    int i;
++
++    PrintString("Starting sleep test...\n");
++
++    for (i = 0; i < 5; i++) {
++        PrintString("Going to sleep for 10000 ticks...\n");
++        
++        Sleep(10000);
++        
++        PrintString("I am awake now!\n");
++    }
++
++    PrintString("Sleep test finished.\n");
++    Halt();
++}
+diff --git a/nachos-project/code/test/sleeptest.coff b/nachos-project/code/test/sleeptest.coff
+new file mode 100755
+index 0000000..6b7dec8
+Binary files /dev/null and b/nachos-project/code/test/sleeptest.coff differ
+diff --git a/nachos-project/code/test/sleeptest.o b/nachos-project/code/test/sleeptest.o
+new file mode 100644
+index 0000000..8d914d5
+Binary files /dev/null and b/nachos-project/code/test/sleeptest.o differ
+diff --git a/nachos-project/code/test/sort b/nachos-project/code/test/sort
+index 5e6116a..fccd197 100644
+Binary files a/nachos-project/code/test/sort and b/nachos-project/code/test/sort differ
+diff --git a/nachos-project/code/test/sort.coff b/nachos-project/code/test/sort.coff
+index dc226d9..a4dae27 100755
+Binary files a/nachos-project/code/test/sort.coff and b/nachos-project/code/test/sort.coff differ
+diff --git a/nachos-project/code/test/start.S b/nachos-project/code/test/start.S
+index 78f4b72..a53dcc3 100644
+--- a/nachos-project/code/test/start.S
++++ b/nachos-project/code/test/start.S
+@@ -74,6 +74,22 @@ Exit:
+ 	j	$31
+ 	.end Exit
+ 
++    .globl SetPriority
++    .ent	SetPriority
++SetPriority:
++    addiu $2, $0, SC_SetPriority
++    syscall
++    j	$31
++    .end	SetPriority
++
++	.globl Sleep
++	.ent	Sleep
++Sleep:
++	addiu $2,$0,SC_Sleep
++	syscall
++	j	$31
++	.end Sleep
++
+ 	.globl Exec
+ 	.ent	Exec
+ Exec:
+@@ -242,6 +258,14 @@ PrintString:
+ 	j	$31
+ 	.end PrintString
+ 
++	.globl Pipe
++    .ent   Pipe
++Pipe:
++    addiu $2, $0, SC_Pipe
++    syscall
++    j     $31
++    .end   Pipe
++
+ 	.globl CreateFile
+ 	.ent	CreateFile
+ CreateFile:
+diff --git a/nachos-project/code/test/start.o b/nachos-project/code/test/start.o
+index 91e9fe4..566bfa7 100644
+Binary files a/nachos-project/code/test/start.o and b/nachos-project/code/test/start.o differ
+diff --git a/nachos-project/code/test/str_io b/nachos-project/code/test/str_io
+index 04a57e5..49544f8 100644
+Binary files a/nachos-project/code/test/str_io and b/nachos-project/code/test/str_io differ
+diff --git a/nachos-project/code/test/str_io.coff b/nachos-project/code/test/str_io.coff
+index a5cc04a..bf949d8 100755
+Binary files a/nachos-project/code/test/str_io.coff and b/nachos-project/code/test/str_io.coff differ
+diff --git a/nachos-project/code/test/test_scheduler b/nachos-project/code/test/test_scheduler
+new file mode 100644
+index 0000000..9cb9055
+Binary files /dev/null and b/nachos-project/code/test/test_scheduler differ
+diff --git a/nachos-project/code/test/test_scheduler.c b/nachos-project/code/test/test_scheduler.c
+new file mode 100644
+index 0000000..8fc5f7b
+--- /dev/null
++++ b/nachos-project/code/test/test_scheduler.c
+@@ -0,0 +1,14 @@
++int main() {
++    
++    int highPID;
++    int lowPID;
++    // exec both — both start at priority 10, enter ready list
++    highPID = Exec("../test/high");  
++    lowPID  = Exec("../test/low");
++    // high runs first, sets priority 90, yields
++    // now high is highest priority in ready list → runs to completion
++    // then low runs
++    Join(highPID);
++    Join(lowPID);
++    Exit(0);
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/test/test_scheduler.coff b/nachos-project/code/test/test_scheduler.coff
+new file mode 100755
+index 0000000..f6f3e58
+Binary files /dev/null and b/nachos-project/code/test/test_scheduler.coff differ
+diff --git a/nachos-project/code/test/test_scheduler.o b/nachos-project/code/test/test_scheduler.o
+new file mode 100644
+index 0000000..682bbd2
+Binary files /dev/null and b/nachos-project/code/test/test_scheduler.o differ
+diff --git a/nachos-project/code/test/test_sem b/nachos-project/code/test/test_sem
+index 3e2cb55..4928ac8 100644
+Binary files a/nachos-project/code/test/test_sem and b/nachos-project/code/test/test_sem differ
+diff --git a/nachos-project/code/test/test_sem.coff b/nachos-project/code/test/test_sem.coff
+index e36a958..f4fa7f3 100755
+Binary files a/nachos-project/code/test/test_sem.coff and b/nachos-project/code/test/test_sem.coff differ
+diff --git a/nachos-project/code/test/test_syscall b/nachos-project/code/test/test_syscall
+index d49b937..6f88934 100644
+Binary files a/nachos-project/code/test/test_syscall and b/nachos-project/code/test/test_syscall differ
+diff --git a/nachos-project/code/test/test_syscall.coff b/nachos-project/code/test/test_syscall.coff
+index 4d58820..12815b4 100755
+Binary files a/nachos-project/code/test/test_syscall.coff and b/nachos-project/code/test/test_syscall.coff differ
+diff --git a/nachos-project/code/test/voinuoc b/nachos-project/code/test/voinuoc
+index 7b28e59..64ca25f 100644
+Binary files a/nachos-project/code/test/voinuoc and b/nachos-project/code/test/voinuoc differ
+diff --git a/nachos-project/code/test/voinuoc.coff b/nachos-project/code/test/voinuoc.coff
+index aa38d3b..d3a5884 100755
+Binary files a/nachos-project/code/test/voinuoc.coff and b/nachos-project/code/test/voinuoc.coff differ
+diff --git a/nachos-project/code/threads/alarm.cc b/nachos-project/code/threads/alarm.cc
+index ce30385..0ddbe55 100644
+--- a/nachos-project/code/threads/alarm.cc
++++ b/nachos-project/code/threads/alarm.cc
+@@ -20,7 +20,9 @@
+ //		occur at random, instead of fixed, intervals.
+ //----------------------------------------------------------------------
+ 
+-Alarm::Alarm(bool doRandom) { timer = new Timer(doRandom, this); }
++Alarm::Alarm(bool doRandom) { 
++    timer = new Timer(doRandom, this);
++    sleepQueue = new SortedList<SleepingThread *>(CompareSleepingThreads); }
+ 
+ //----------------------------------------------------------------------
+ // Alarm::CallBack
+@@ -40,11 +42,62 @@ Alarm::Alarm(bool doRandom) { timer = new Timer(doRandom, this); }
+ //      if we're currently running something (in other words, not idle).
+ //----------------------------------------------------------------------
+ 
++
++
+ void Alarm::CallBack() {
+     Interrupt *interrupt = kernel->interrupt;
+     MachineStatus status = interrupt->getStatus();
+ 
++    // Check if any threads in the sleepQueue need to be woken up
++    if (!sleepQueue->IsEmpty()) {
++        int currentTime = kernel->stats->totalTicks;
++        
++        // Peek at the front of the sorted list
++        while (!sleepQueue->IsEmpty() && sleepQueue->Front()->wakeTime <= currentTime) {
++            SleepingThread *st = sleepQueue->RemoveFront();
++            
++            // Put the thread back on the ready queue
++            kernel->scheduler->ReadyToRun(st->thread);
++            
++            delete st; // Clean up the helper object
++        }
++    }
++
+     if (status != IdleMode) {
+         interrupt->YieldOnReturn();
+     }
+ }
++
++//compare sleeping threads helper function
++int Alarm::CompareSleepingThreads(SleepingThread *a, SleepingThread *b) {
++    if (a->wakeTime < b->wakeTime) return -1;
++    if (a->wakeTime > b->wakeTime) return 1;
++    return 0;
++}
++
++
++//alarm wait until function to handle the thread and enter the new entry into the sorted list
++void Alarm::WaitUntil(int x) {
++
++    if (x <=0) {return;}
++    // Disable interrupts 
++    IntStatus oldLevel = kernel->interrupt->SetLevel(IntOff);
++
++    // 2. Calculate the absolute time when this thread should wake up
++    // Stats->totalTicks  = current system time
++    int wakeTime = kernel->stats->totalTicks + x;
++    
++    DEBUG(dbgThread, "Thread " << kernel->currentThread->getName() 
++          << " sleeping until " << wakeTime);
++
++    // 3. Create a record for this thread and put it in the sorted queue
++    SleepingThread *st = new SleepingThread(kernel->currentThread, wakeTime);
++    sleepQueue->Insert(st);
++
++    // 4. Put the thread to sleep (this changes status to BLOCKED and yields CPU)
++    // Thread::Sleep expects interrupts to be OFF
++    kernel->currentThread->Sleep2(FALSE);
++
++    // 5. Re-enable interrupts after waking up
++    (void)kernel->interrupt->SetLevel(oldLevel);
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/threads/alarm.h b/nachos-project/code/threads/alarm.h
+index af6dd02..b3a7577 100644
+--- a/nachos-project/code/threads/alarm.h
++++ b/nachos-project/code/threads/alarm.h
+@@ -21,6 +21,16 @@
+ #include "utility.h"
+ #include "callback.h"
+ #include "timer.h"
++#include "list.h"
++#include "thread.h"
++
++// Helper class to store sleeping threads and their wake-up deadlines
++class SleepingThread {
++   public:
++    SleepingThread(Thread *t, int time) : thread(t), wakeTime(time) {}
++    Thread *thread;
++    int wakeTime;
++};
+ 
+ // The following class defines a software alarm clock.
+ class Alarm : public CallBackObj {
+@@ -34,9 +44,10 @@ class Alarm : public CallBackObj {
+ 
+    private:
+     Timer *timer;  // the hardware timer device
+-
++    SortedList<SleepingThread *> *sleepQueue; //initialise a sorted list to keep and maintain sleeping threads
+     void CallBack();  // called when the hardware
+                       // timer generates an interrupt
++    static int CompareSleepingThreads(SleepingThread *a, SleepingThread *b);
+ };
+ 
+ #endif  // ALARM_H
+diff --git a/nachos-project/code/threads/pcb.cc b/nachos-project/code/threads/pcb.cc
+index a740854..d8c7d43 100644
+--- a/nachos-project/code/threads/pcb.cc
++++ b/nachos-project/code/threads/pcb.cc
+@@ -1,11 +1,19 @@
+ #include "synch.h"
+ #include "pcb.h"
+ 
++
+ PCB::PCB(int id) {
+     this->processID = kernel->currentThread->processID;
++    
+     joinsem = new Semaphore("joinsem", 0);
+     exitsem = new Semaphore("exitsem", 0);
+     multex = new Semaphore("multex", 1);
++
++    //initialize fd table
++    for (int i = 0; i< MAX_FD; i++) {
++        fdTable[i].type = FD_FREE;
++        fdTable[i].pipe = NULL;
++    }
+ }
+ 
+ PCB::~PCB() {
+@@ -19,7 +27,7 @@ PCB::~PCB() {
+         // delete thread;
+     }
+ 
+-    delete[] filename;
++    
+ }
+ 
+ void StartProcess_2(void* pid) {
+@@ -59,13 +67,19 @@ int PCB::Exec(char* filename, int id) {
+         return -1;    // Tra ve -1 neu that bai
+     }
+ 
++    //pipe inheritance in Exec 
++    for(int i = 0; i< MAX_FD; i++) {
++        this->fdTable[i].type = kernel->currentThread->pcb->fdTable[i].type;
++        this->fdTable[i].pipe = kernel->currentThread->pcb->fdTable[i].pipe;
++    }
++
+     //  Đặt processID của thread này là id.
+     this->thread->processID = id;
+     // Đặt parrentID của thread này là processID của thread gọi thực thi Exec
+     this->parentID = kernel->currentThread->processID;
+     // Gọi thực thi Fork(StartProcess_2,id) => Ta cast thread thành kiểu int,
+     // sau đó khi xử ký hàm StartProcess ta cast Thread về đúng kiểu của nó.
+-
++    this->thread->pcb = this;
+     // Không được sử dụng biến id ở đây, vì biến id là biến cục bộ,
+     // nên khi hàm này kết thúc thì giá trị của biến này cũng bị xóa
+     // Đừng hỏi tôi đã mất bao lâu để nhận ra điều này :)
+@@ -114,6 +128,17 @@ void PCB::DecNumWait() {
+     multex->V();
+ }
+ 
++int PCB::AllocFd(int type, PipeBuffer* pipe) {
++    for (int i = 0; i < MAX_FD; i++) {
++        if (fdTable[i].type == FD_FREE) {
++            fdTable[i].type = type;
++            fdTable[i].pipe = pipe;
++            return i;
++        }
++    }
++    return -1; // no free fd
++} 
++
+ void PCB::SetExitCode(int ec) { exitcode = ec; }
+ 
+ int PCB::GetExitCode() { return exitcode; }
+diff --git a/nachos-project/code/threads/pcb.h b/nachos-project/code/threads/pcb.h
+index dcab368..9cc3f6c 100644
+--- a/nachos-project/code/threads/pcb.h
++++ b/nachos-project/code/threads/pcb.h
+@@ -1,5 +1,16 @@
+ #ifndef PCB_H
+ #define PCB_H
++#include "pipebuffer.h"
++
++#define MAX_FD 20
++#define FD_FREE 0
++#define FD_PIPE_READ 1
++#define FD_PIPE_WRITE 2
++
++struct FileDescriptor {
++    int type;
++    PipeBuffer* pipe;
++};
+ 
+ class PCB {
+    private:
+@@ -37,6 +48,11 @@ class PCB {
+ 
+     void SetFileName(char *fn);
+     char *GetFileName();
++
++    FileDescriptor fdTable[MAX_FD];
++    void InitFdTable();
++    int AllocFd(int type, PipeBuffer* pipe);
++    
+ };
+ 
+ #endif
+diff --git a/nachos-project/code/threads/pipebuffer.cc b/nachos-project/code/threads/pipebuffer.cc
+new file mode 100644
+index 0000000..660d747
+--- /dev/null
++++ b/nachos-project/code/threads/pipebuffer.cc
+@@ -0,0 +1,45 @@
++#include "synch.h"
++#include "pipebuffer.h"
++
++PipeBuffer::PipeBuffer() {
++    count = 0;
++    readPos = 0;
++    writePos = 0;
++    mutex = new Semaphore("pipe_mutex", 1);
++    full  = new Semaphore("pipe_full", 0);
++    empty = new Semaphore("pipe_empty", PIPE_SIZE);
++}
++
++PipeBuffer::~PipeBuffer() {
++    delete mutex;
++    delete full;
++    delete empty;
++}
++
++int PipeBuffer::Write(char* buf, int size) {
++    int i;
++    for (i = 0; i < size; i++) {
++        empty->P();
++        mutex->P();
++        data[writePos] = buf[i];
++        writePos = (writePos + 1) % PIPE_SIZE;
++        count++;
++        mutex->V();
++        full->V();
++    }
++    return size;
++}
++
++int PipeBuffer::Read(char* buf, int size) {
++    int i;
++    for (i = 0; i < size; i++) {
++        full->P();
++        mutex->P();
++        buf[i] = data[readPos];
++        readPos = (readPos + 1) % PIPE_SIZE;
++        count--;
++        mutex->V();
++        empty->V();
++    }
++    return size;
++}
+\ No newline at end of file
+diff --git a/nachos-project/code/threads/pipebuffer.h b/nachos-project/code/threads/pipebuffer.h
+new file mode 100644
+index 0000000..09d9dcc
+--- /dev/null
++++ b/nachos-project/code/threads/pipebuffer.h
+@@ -0,0 +1,24 @@
++#ifndef PIPEBUFFER_H
++#define PIPEBUFFER_H
++
++#define PIPE_SIZE 1024
++
++class Semaphore;
++
++class PipeBuffer {
++public:
++    char data[PIPE_SIZE];
++    int count;
++    int readPos;
++    int writePos;
++    Semaphore* mutex;
++    Semaphore* full;
++    Semaphore* empty;
++
++    PipeBuffer();
++    ~PipeBuffer();
++    int Write(char* buf, int size);
++    int Read(char* buf, int size);
++};
++
++#endif
+\ No newline at end of file
+diff --git a/nachos-project/code/threads/ptable.cc b/nachos-project/code/threads/ptable.cc
+index 89f8486..77ecf87 100644
+--- a/nachos-project/code/threads/ptable.cc
++++ b/nachos-project/code/threads/ptable.cc
+@@ -15,7 +15,7 @@ PTable::PTable(int size) {
+ PTable::~PTable() {
+     int i;
+     for (i = 0; i < psize; i++) {
+-        if (!pcb[i]) delete pcb[i];
++        if (pcb[i]) delete pcb[i];
+     }
+     delete bmsem;
+ }
+@@ -72,8 +72,12 @@ int PTable::ExitUpdate(int exitcode) {
+     // Nếu tiến trình gọi là main process thì gọi Halt().
+     int id = kernel->currentThread->processID;
+     if (id == 0) {
+-        kernel->currentThread->FreeSpace();
+-        kernel->interrupt->Halt();
++        // Only halt if no children are being waited on
++        if (pcb[0]->GetNumWait() == 0) {
++            kernel->currentThread->FreeSpace();
++            kernel->interrupt->Halt();
++        }
++        // Otherwise fall through — Join will have already blocked us
+         return 0;
+     }
+ 
+diff --git a/nachos-project/code/threads/scheduler.cc b/nachos-project/code/threads/scheduler.cc
+index 1d52916..0decb53 100644
+--- a/nachos-project/code/threads/scheduler.cc
++++ b/nachos-project/code/threads/scheduler.cc
+@@ -29,8 +29,14 @@
+ //	Initially, no ready threads.
+ //----------------------------------------------------------------------
+ 
++int ComparePriority(Thread *a, Thread *b) {
++    if (a->priority > b->priority) return -1; // a comes before b
++    if (a->priority < b->priority) return 1;  // a comes after b
++    return 0;                                 // equal
++}
++
+ Scheduler::Scheduler() {
+-    readyList = new List<Thread *>;
++    readyList = new SortedList<Thread *>(ComparePriority);
+     toBeDestroyed = NULL;
+ }
+ 
+@@ -51,12 +57,13 @@ Scheduler::~Scheduler() { delete readyList; }
+ 
+ void Scheduler::ReadyToRun(Thread *thread) {
+     ASSERT(kernel->interrupt->getLevel() == IntOff);
+-    DEBUG(dbgThread, "Putting thread on ready list: " << thread->getName());
+-
+     thread->setStatus(READY);
+-    readyList->Append(thread);
++    readyList->Insert(thread);
++    // nothing else. no yield, no preemption, nothing.
+ }
+ 
++
++
+ //----------------------------------------------------------------------
+ // Scheduler::FindNextToRun
+ // 	Return the next thread to be scheduled onto the CPU.
+diff --git a/nachos-project/code/threads/scheduler.h b/nachos-project/code/threads/scheduler.h
+index a96f228..911f0db 100644
+--- a/nachos-project/code/threads/scheduler.h
++++ b/nachos-project/code/threads/scheduler.h
+@@ -35,7 +35,7 @@ class Scheduler {
+     // SelfTest for scheduler is implemented in class Thread
+ 
+    private:
+-    List<Thread*>* readyList;  // queue of threads that are ready to run,
++    SortedList<Thread*>* readyList;  // queue of threads that are ready to run,
+                                // but not running
+     Thread* toBeDestroyed;     // finishing thread to be destroyed
+                                // by the next thread that runs
+diff --git a/nachos-project/code/threads/thread.cc b/nachos-project/code/threads/thread.cc
+index be9f7d6..9dadeac 100644
+--- a/nachos-project/code/threads/thread.cc
++++ b/nachos-project/code/threads/thread.cc
+@@ -21,6 +21,7 @@
+ #include "switch.h"
+ #include "synch.h"
+ #include "sysdep.h"
++#include "pcb.h"
+ 
+ // this is put at the top of the execution stack, for detecting stack overflows
+ const int STACK_FENCEPOST = 0xdedbeef;
+@@ -38,7 +39,9 @@ Thread::Thread(char *threadName, bool _has_dynamic_name /*=false*/) {
+     name = threadName;
+     stackTop = NULL;
+     stack = NULL;
++    priority = 10;
+     status = JUST_CREATED;
++    pcb = NULL;
+     for (int i = 0; i < MachineStateSize; i++) {
+         machineState[i] = NULL;  // not strictly necessary, since
+                                  // new thread ignores contents
+@@ -244,6 +247,20 @@ void Thread::Sleep(bool finishing) {
+     kernel->scheduler->Run(nextThread, finishing);
+ }
+ 
++
++void Thread::Sleep2(bool finishing){
++    Thread *nextThread;
++    ASSERT(this == kernel->currentThread);
++    ASSERT(kernel->interrupt->getLevel() == IntOff);
++
++    status = BLOCKED; //set thread to blocked state
++    while ((nextThread = kernel->scheduler->FindNextToRun()) == NULL)
++        kernel->interrupt->Idle();  // no one to run, wait for an interrupt
++
++    // returns when it's time for us to run
++    kernel->scheduler->Run(nextThread, finishing);
++}
++
+ //----------------------------------------------------------------------
+ // ThreadBegin, ThreadFinish,  ThreadPrint
+ //	Dummy functions because C++ does not (easily) allow pointers to member
+diff --git a/nachos-project/code/threads/thread.h b/nachos-project/code/threads/thread.h
+index 3fbf156..ce6ad6d 100644
+--- a/nachos-project/code/threads/thread.h
++++ b/nachos-project/code/threads/thread.h
+@@ -70,6 +70,7 @@ enum ThreadStatus { JUST_CREATED, RUNNING, READY, BLOCKED };
+ //
+ //  Some threads also belong to a user address space; threads
+ //  that only run in the kernel have a NULL address space.
++class PCB;
+ 
+ class Thread {
+    private:
+@@ -93,15 +94,16 @@ class Thread {
+     void FreeSpace() {
+         if (space != 0) delete space;
+     }
++    int priority;
+ 
+     // basic thread operations
+-
++    PCB *pcb;
+     void Fork(VoidFunctionPtr func, void *arg);
+     // Make thread run (*func)(arg)
+     void Yield();                // Relinquish the CPU if any
+                                  // other thread is runnable
+     void Sleep(bool finishing);  // Put the thread to sleep and
+-                                 // relinquish the processor
++    void Sleep2(bool finishing);                             // relinquish the processor
+     void Begin();                // Startup code for the thread
+     void Finish();               // The thread is done executing
+ 
+diff --git a/nachos-project/code/userprog/addrspace.cc b/nachos-project/code/userprog/addrspace.cc
+index 0002d39..67d09eb 100644
+--- a/nachos-project/code/userprog/addrspace.cc
++++ b/nachos-project/code/userprog/addrspace.cc
+@@ -103,7 +103,7 @@ AddrSpace::~AddrSpace() {
+ 
+ AddrSpace::AddrSpace(char *fileName) {
+     OpenFile *executable = kernel->fileSystem->Open(fileName);
+-    NoffHeader noffH;
++    
+     unsigned int i, size, j, offset;
+     unsigned int numCodePage,
+         numDataPage;  // số trang cho phần code và phần initData
+@@ -148,39 +148,42 @@ AddrSpace::AddrSpace(char *fileName) {
+     pageTable = new TranslationEntry[numPages];
+     for (i = 0; i < numPages; i++) {
+         pageTable[i].virtualPage = i;  // for now, virtual page # = phys page #
+-        pageTable[i].physicalPage = kernel->gPhysPageBitMap->FindAndSet();
++        pageTable[i].physicalPage = -1 ; //dont assign physical page : DEMAND PAGING
+         // cerr << pageTable[i].physicalPage << endl;
+-        pageTable[i].valid = TRUE;
++        pageTable[i].valid = FALSE; //dpnt use all page tables
+         pageTable[i].use = FALSE;
+         pageTable[i].dirty = FALSE;
+         pageTable[i].readOnly = FALSE;  // if the code segment was entirely on
+         // a separate page, we could set its
+         // pages to be read-only
+         // xóa các trang này trên memory
+-        bzero(&(kernel->machine
+-                    ->mainMemory[pageTable[i].physicalPage * PageSize]),
+-              PageSize);
++        // bzero(&(kernel->machine
++        //             ->mainMemory[pageTable[i].physicalPage * PageSize]),
++        //       PageSize);
+         DEBUG(dbgAddr, "phyPage " << pageTable[i].physicalPage);
+     }
+ 
+-    if (noffH.code.size > 0) {
+-        for (i = 0; i < numPages; i++)
+-            executable->ReadAt(
+-                &(kernel->machine->mainMemory[noffH.code.virtualAddr]) +
+-                    (pageTable[i].physicalPage * PageSize),
+-                PageSize, noffH.code.inFileAddr + (i * PageSize));
+-    }
++    // below code is commented for DEMAND PAGING 
+ 
+-    if (noffH.initData.size > 0) {
+-        for (i = 0; i < numPages; i++)
+-            executable->ReadAt(
+-                &(kernel->machine->mainMemory[noffH.initData.virtualAddr]) +
+-                    (pageTable[i].physicalPage * PageSize),
+-                PageSize, noffH.initData.inFileAddr + (i * PageSize));
+-    }
++    // if (noffH.code.size > 0) {
++    //     for (i = 0; i < numPages; i++)
++    //         executable->ReadAt(
++    //             &(kernel->machine->mainMemory[noffH.code.virtualAddr]) +
++    //                 (pageTable[i].physicalPage * PageSize),
++    //             PageSize, noffH.code.inFileAddr + (i * PageSize));
++    // }
++
++    // if (noffH.initData.size > 0) {
++    //     for (i = 0; i < numPages; i++)
++    //         executable->ReadAt(
++    //             &(kernel->machine->mainMemory[noffH.initData.virtualAddr]) +
++    //                 (pageTable[i].physicalPage * PageSize),
++    //             PageSize, noffH.initData.inFileAddr + (i * PageSize));
++    // }
+ 
+     kernel->addrLock->V();
+-    delete executable;
++    //delete executable;
++    this->executableFile = executable;
+     return;
+ }
+ 
+@@ -196,6 +199,11 @@ AddrSpace::AddrSpace(char *fileName) {
+ void AddrSpace::Execute() {
+     kernel->currentThread->space = this;
+ 
++    //initialise or give this thread a PCB!
++    if (kernel->currentThread->pcb == NULL) {
++        kernel->currentThread->pcb = new PCB(0);
++    }
++
+     this->InitRegisters();  // set the initial register values
+     this->RestoreState();   // load page table register
+ 
+diff --git a/nachos-project/code/userprog/addrspace.h b/nachos-project/code/userprog/addrspace.h
+index eb40a1a..5681360 100644
+--- a/nachos-project/code/userprog/addrspace.h
++++ b/nachos-project/code/userprog/addrspace.h
+@@ -15,6 +15,7 @@
+ 
+ #include "copyright.h"
+ #include "filesys.h"
++#include "noff.h"
+ 
+ #define UserStackSize 1024  // increase this as necessary!
+ 
+@@ -31,6 +32,10 @@ class AddrSpace {
+ 
+     void SaveState();     // Save/restore address space-specific
+     void RestoreState();  // info on a context switch
++    TranslationEntry* GetPageTable() { return pageTable; }
++    NoffHeader* GetNoffHeader() { return &noffH; }
++
++    OpenFile *executableFile;
+ 
+     // Translate virtual address _vaddr_
+     // to physical address _paddr_. _mode_
+@@ -45,6 +50,7 @@ class AddrSpace {
+ 
+     void InitRegisters();  // Initialize user-level CPU registers,
+                            // before jumping to user code
++    NoffHeader noffH;
+ };
+ 
+ #endif  // ADDRSPACE_H
+diff --git a/nachos-project/code/userprog/exception.cc b/nachos-project/code/userprog/exception.cc
+index a95db6c..96e28ff 100644
+--- a/nachos-project/code/userprog/exception.cc
++++ b/nachos-project/code/userprog/exception.cc
+@@ -25,6 +25,7 @@
+ #include "main.h"
+ #include "syscall.h"
+ #include "ksyscall.h"
++#include "noff.h"
+ //----------------------------------------------------------------------
+ // ExceptionHandler
+ // 	Entry point into the Nachos kernel.  Called when a user program
+@@ -403,6 +404,122 @@ void handle_SC_GetPid() {
+     return move_program_counter();
+ }
+ 
++//pipe syscall handling
++
++void handle_SC_Pipe() {
++    // 1. Get the user-space address of the 'int fd[2]' array from Register 4
++    int userAddr = kernel->machine->ReadRegister(4);
++
++    // 2. Create the shared kernel PipeBuffer
++    PipeBuffer* pipe = new PipeBuffer();
++
++    // 3. Find two free slots in the current process's FD Table
++    // We'll need a way to scan the table we just added to the PCB
++    int readFD = -1;
++    int writeFD = -1;
++
++    for (int i = 2; i < MAX_FD; i++) { // Start at 2 (0 and 1 are stdin/out)
++        if (kernel->currentThread->pcb->fdTable[i].type == FD_FREE) {
++            if (readFD == -1) {
++                readFD = i;
++            } else {
++                writeFD = i;
++                break; 
++            }
++        }
++    }
++
++    // 4. If we couldn't find two slots, handle the error
++    if (writeFD == -1) {
++        delete pipe; // Clean up memory
++        kernel->machine->WriteRegister(2, -1); // Return -1 to user
++        return;
++    }
++
++    // 5. Fill the slots in the PCB
++    kernel->currentThread->pcb->fdTable[readFD].type = FD_PIPE_READ;
++    kernel->currentThread->pcb->fdTable[readFD].pipe = pipe;
++
++    kernel->currentThread->pcb->fdTable[writeFD].type = FD_PIPE_WRITE;
++    kernel->currentThread->pcb->fdTable[writeFD].pipe = pipe;
++
++    // 6. Copy the FD numbers back to the user's memory array
++    // We use WriteMem to put 'readFD' at userAddr and 'writeFD' at userAddr + 4
++    kernel->machine->WriteMem(userAddr, 4, readFD);
++    kernel->machine->WriteMem(userAddr + 4, 4, writeFD);
++
++    // 7. Success! Return 0
++    kernel->machine->WriteRegister(2, 0);
++
++    // Don't forget to advance the Program Counter!
++    // If you have a MovePC() function, call it here.
++    return move_program_counter();
++}
++
++void handle_SC_Sleep() {
++    int ticks = kernel->machine->ReadRegister(4); //read the argument
++    DEBUG(dbgSys, "User program calling Sleep for " << ticks << " ticks"); //debug mode
++    kernel->alarm->WaitUntil(ticks); //newly made wait until program must be executed here
++    return move_program_counter();
++
++}
++
++void handle_SC_SetPriority() {
++    int newPriority = kernel->machine->ReadRegister(4);
++    kernel->currentThread->priority = newPriority;
++    move_program_counter();
++    // nothing else. no yield, no YieldOnReturn, nothing.
++}
++
++void HandlePageFault(){
++    int vaddr = kernel->machine->ReadRegister(BadVAddrReg);
++    unsigned int vpn = (unsigned int)vaddr / PageSize;
++
++    AddrSpace *space = kernel->currentThread->space;
++    int pfn = kernel->gPhysPageBitMap->FindAndSet(); //get physical frame
++
++    if(pfn == -1){
++        //kill process because no physical frame found
++        DEBUG(dbgAddr, "Out of Physical Memory!\n");
++        SysHalt();
++    }
++    // zero out the frame in main memory
++    bzero(&(kernel->machine->mainMemory[pfn * PageSize]), PageSize);
++    NoffHeader *noffH = space->GetNoffHeader();
++    int fileOffset = -1;
++    // get the page
++    unsigned int pageStartVAddr = vpn * PageSize;
++
++    // check if its part of code segment or not:
++    if (pageStartVAddr >= noffH->code.virtualAddr && 
++        pageStartVAddr < noffH->code.virtualAddr + noffH->code.size) {
++        fileOffset = noffH->code.inFileAddr + (pageStartVAddr - noffH->code.virtualAddr);
++    } 
++    // Is this page part of the Initialized Data segment?
++    else if (pageStartVAddr >= noffH->initData.virtualAddr && 
++             pageStartVAddr < noffH->initData.virtualAddr + noffH->initData.size) {
++        fileOffset = noffH->initData.inFileAddr + (pageStartVAddr - noffH->initData.virtualAddr);
++    }
++
++    //load data from disk!
++    if (fileOffset != -1){
++        space->executableFile->ReadAt(
++            &(kernel->machine->mainMemory[pfn * PageSize]), 
++            PageSize, 
++            fileOffset
++        );
++    }
++
++    // 6. Update the Page Table
++    TranslationEntry *pageTable = space->GetPageTable();
++    pageTable[vpn].physicalPage = pfn;
++    pageTable[vpn].valid = TRUE;
++
++    DEBUG(dbgAddr, "Page Fault Resolved: VPN " << vpn << " -> PFN " << pfn << "\n");
++}
++
++
++
+ void ExceptionHandler(ExceptionType which) {
+     int type = kernel->machine->ReadRegister(2);
+ 
+@@ -414,6 +531,8 @@ void ExceptionHandler(ExceptionType which) {
+             DEBUG(dbgSys, "Switch to system mode\n");
+             break;
+         case PageFaultException:
++            HandlePageFault();
++            return;
+         case ReadOnlyException:
+         case BusErrorException:
+         case AddressErrorException:
+@@ -428,14 +547,20 @@ void ExceptionHandler(ExceptionType which) {
+             switch (type) {
+ 		case SC_Abs:
+ 		    return handle_SC_Abs();
++                case SC_Pipe:
++                    return handle_SC_Pipe();
+                 case SC_Halt:
+                     return handle_SC_Halt();
++                case SC_Sleep:
++                    return handle_SC_Sleep();
+                 case SC_Add:
+                     return handle_SC_Add();
+                 case SC_ReadNum:
+                     return handle_SC_ReadNum();
+                 case SC_PrintNum:
+                     return handle_SC_PrintNum();
++                case SC_SetPriority:
++                    return handle_SC_SetPriority();
+                 case SC_ReadChar:
+                     return handle_SC_ReadChar();
+                 case SC_PrintChar:
+diff --git a/nachos-project/code/userprog/ksyscall.h b/nachos-project/code/userprog/ksyscall.h
+index d357aed..a6a3b1a 100644
+--- a/nachos-project/code/userprog/ksyscall.h
++++ b/nachos-project/code/userprog/ksyscall.h
+@@ -171,17 +171,63 @@ int SysOpen(char* fileName, int type) {
+ int SysClose(int id) { return kernel->fileSystem->Close(id); }
+ 
+ int SysRead(char* buffer, int charCount, int fileId) {
+-    if (fileId == 0) {
+-        return kernel->synchConsoleIn->GetString(buffer, charCount);
++    if (fileId < 0 || fileId >= MAX_FD) return -1;
++
++    FileDescriptor* fd = &(kernel->currentThread->pcb->fdTable[fileId]);
++
++    // 1. Route to Pipe
++    if (fd->type == FD_PIPE_READ) {
++        return fd->pipe->Read(buffer, charCount);
++    } 
++    // 2. Prevent reading from a Write-end
++    else if (fd->type == FD_PIPE_WRITE) {
++        DEBUG(dbgFile, "Error: Attempted read from a write-only pipe end.\n");
++        return -1;
++    }
++    // 3. Normal File/Console logic
++    else if (fileId == 0) { // stdin
++        for (int i = 0; i < charCount; i++) {
++            buffer[i] = kernel->synchConsoleIn->GetChar();
++        }
++        return charCount;
+     }
+-    return kernel->fileSystem->Read(buffer, charCount, fileId);
++    
++    // Default: return -1 or handle regular OpenFile*
++    return -1; 
+ }
+ 
+ int SysWrite(char* buffer, int charCount, int fileId) {
+-    if (fileId == 1) {
+-        return kernel->synchConsoleOut->PutString(buffer, charCount);
++    // 1. Check for valid FD range
++    if (fileId < 0 || fileId >= MAX_FD) return -1;
++
++    // 2. Get the FD entry from the current PCB
++    FileDescriptor* fd = &(kernel->currentThread->pcb->fdTable[fileId]);
++
++    // 3. Route based on type
++    if (fd->type == FD_PIPE_WRITE) {
++        // Use your PipeBuffer!
++        return fd->pipe->Write(buffer, charCount);
++    } 
++    else if (fd->type == FD_PIPE_READ) {
++        // Illegal operation: writing to a read-end
++        DEBUG(dbgFile, "Error: Attempted write to a read-only pipe end.\n");
++        return -1;
++    } 
++    else if (fd->type == FD_FREE) {
++        return -1; // File not open
++    }
++    
++    // 4. Fallback to normal File System or Console logic
++    // (This part likely already exists in your code)
++    if (fileId == 1) { // stdout
++        for (int i = 0; i < charCount; i++) {
++            kernel->synchConsoleOut->PutChar(buffer[i]);
++        }
++        return charCount;
+     }
+-    return kernel->fileSystem->Write(buffer, charCount, fileId);
++    
++    // If it's a regular file:
++    //return fd->file->Write(buffer, charCount);
+ }
+ 
+ int SysSeek(int seekPos, int fileId) {
+diff --git a/nachos-project/code/userprog/noff.h b/nachos-project/code/userprog/noff.h
+index 817e506..b654e01 100644
+--- a/nachos-project/code/userprog/noff.h
++++ b/nachos-project/code/userprog/noff.h
+@@ -4,6 +4,8 @@
+  *     Basically, we only know about three types of segments:
+  *	code (read-only), initialized data, and unitialized data
+  */
++#ifndef NOFF_H
++#define NOFF_H
+ 
+ #define NOFFMAGIC                            \
+     0xbadfad /* magic number denoting Nachos \
+@@ -27,3 +29,5 @@ typedef struct noffHeader {
+                          * should be zero'ed before use
+                          */
+ } NoffHeader;
++
++#endif
+\ No newline at end of file
+diff --git a/nachos-project/code/userprog/syscall.h b/nachos-project/code/userprog/syscall.h
+index ad7449e..e93b1e1 100644
+--- a/nachos-project/code/userprog/syscall.h
++++ b/nachos-project/code/userprog/syscall.h
+@@ -49,6 +49,9 @@
+ #define SC_Signal 53
+ #define SC_GetPid 54
+ #define SC_Abs 55
++#define SC_Sleep 56
++#define SC_Pipe 57
++#define SC_SetPriority 58
+ #ifndef IN_ASM
+ 
+ /* The system call interface.  These are the operations the Nachos
+@@ -80,10 +83,20 @@ void PrintChar(char character);
+ 
+ int RandomNum();
+ 
++// to set priority of thread 
++void SetPriority(int priority);
++
+ void ReadString(char *buffer, int length);
+ 
+ void PrintString(char *buffer);
+ 
++//pipe syscall
++
++int Pipe(int *fds);
++
++// sleep syscall
++void Sleep(int ticks);
++
+ /* ABS Function */
+ unsigned int Abs(int op1);
+ 

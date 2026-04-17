@@ -95,6 +95,7 @@ Machine::~Machine() {
 
 void Machine::RaiseException(ExceptionType which, int badVAddr) {
     DEBUG(dbgMach, "Exception: " << exceptionNames[which]);
+    // printf("KERNEL DEBUG: Received Syscall/Exception %d , Virtual Addr: %d \n ", which, badVAddr);
 
     registers[BadVAddrReg] = badVAddr;
     DelayedLoad(0, 0);  // finish anything in progress
